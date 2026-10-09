@@ -1,0 +1,12 @@
+[package]
+name = "lightdriver-devices"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lightdriver-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+hidapi = { version = "2.6.3", default-features = false, features = ["windows-native"] }

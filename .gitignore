@@ -1,0 +1,9 @@
+/target/
+/.cache/
+/.data/
+*.log
+/.codex/
+/.agents/
+/.aws/
+/.env
+/.env.*
