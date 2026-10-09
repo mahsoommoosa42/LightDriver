@@ -2,14 +2,14 @@
 
 Diagnostics is one native tab with Basic and Advanced views, backed by the local Rust service.
 
-Basic groups CPU load/temperature/power, system memory, detected GPUs and cooling. Advanced exposes per-sensor units, source, collection failures, freshness and a selectable cached graph. Min/max cover the rolling last 30 samples; they are not lifetime statistics. CPU/memory sampling and GPU APIs run on a dedicated service thread, separately from Kraken polling. The GUI requests snapshots at 1 Hz.
+Basic groups CPU load/temperature/power, system memory, detected GPUs and cooling. CPU, GPU and memory load use cached radial bars with a centered percentage; memory load is fresh used memory divided by fresh total memory. A valid zero displays 0%; missing readings display a neutral track and a dash. Advanced exposes per-sensor units, source, collection failures, freshness and a selectable cached graph. Min/max cover the rolling last 30 samples; they are not lifetime statistics. CPU/memory sampling and GPU APIs run on a dedicated service thread, separately from Kraken polling. The GUI requests snapshots at 1 Hz.
 
 ## Provider coverage
 
 | Provider | Implemented readings | Validation |
 | --- | --- | --- |
 | Windows / sysinfo | Aggregate CPU load, first 16 logical CPU loads, used/total memory | Automated transport and model tests; live readings can be compared with Task Manager |
-| AMD ADLX | GPU temperature/hotspot, load, board/chip power, fan RPM, clocks and used memory | Rust adapter implemented; per-model coverage needs hardware evidence |
+| AMD ADLX | GPU temperature/hotspot, load, board/chip power, fan RPM, clocks and used memory | Live temperature/load/board-power read paths observed; other models and accuracy comparison pending |
 | NVIDIA NVML | GPU temperature, reported device power, load, used/total memory, clocks and fan percentage | Rust adapter implemented; physical NVIDIA validation pending |
 | Intel Level Zero Sysman | GPU temperature domains, root card average power, combined engine load | Rust adapter implemented; physical Intel validation pending |
 | Kraken X3 HID | Coolant temperature, pump RPM and duty | Read-only reference X53 telemetry observed |
@@ -41,7 +41,7 @@ The snapshot protocol is now version 2. Restart an older service after updating 
 .\target\release\lightdriver-desktop.exe --demo --tab diagnostics --advanced
 ```
 
-These options also work with `--capture` and `--size 980x720`. Screenshots use actual Iced rendering.
+These options also work with `--capture` and `--size 980x720`. Screenshots use actual Iced rendering. See the [Basic](diagnostics-basic.png) and [Advanced](diagnostics-advanced.png) release captures; all readings in those images are simulated.
 
 ## Primary references
 

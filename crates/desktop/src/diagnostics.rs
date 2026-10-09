@@ -67,13 +67,33 @@ impl Workbench {
             }
         }
         let mut cards: Vec<Element<'_, Message>> = vec![];
+
         for group in groups {
-            let mut card = column![heading(group, 16), rule::horizontal(1)].spacing(13);
-            for s in sensors.iter().filter(|s| s.basic && s.group == group) {
+            let load = sensors.iter().find(|s| {
+                s.basic && s.group == group && s.unit == Unit::Percent && s.label.contains("load")
+            });
+            let memory = sensors
+                .iter()
+                .find(|s| s.group == group && s.id == "memory.used");
+            let total = sensors
+                .iter()
+                .find(|s| s.group == group && s.id == "memory.total");
+            let percentage = load.and_then(|s| self.diagnostic_value(s)).or_else(|| {
+                let used = self.diagnostic_value(memory?)?;
+                let total = self.diagnostic_value(total?)?;
+                (total > 0.0 && used <= total).then_some(used / total * 100.0)
+            });
+            let gauge = load.is_some() || memory.is_some();
+            let mut readings = Column::new().spacing(14).width(Fill);
+            for s in sensors.iter().filter(|s| {
+                s.group == group
+                    && (s.basic || s.id == "memory.total")
+                    && load.is_none_or(|l| l.id != s.id)
+            }) {
                 let value = self.diagnostic_value(s);
-                card = card.push(
-                    row![
-                        label(&s.label).width(Fill),
+                readings = readings.push(
+                    column![
+                        label(&s.label),
                         text(
                             value
                                 .map(|v| formatted(v, s.unit))
@@ -84,18 +104,45 @@ impl Workbench {
                             style::FG
                         } else {
                             style::MUTED
-                        })
+                        }),
                     ]
-                    .spacing(12)
-                    .align_y(Alignment::Center),
+                    .spacing(5),
                 );
             }
+            let body: Element<'_, Message> = if gauge {
+                row![
+                    column![
+                        canvas(charts::RadialLoad {
+                            value: percentage.map(|v| v as f32)
+                        })
+                        .width(104)
+                        .height(104),
+                        label(load.map_or("Memory load", |s| s.label.as_str())),
+                        label(if percentage.is_some() {
+                            "of 100%"
+                        } else {
+                            "Unavailable"
+                        }),
+                    ]
+                    .spacing(3)
+                    .align_x(Alignment::Center)
+                    .width(118),
+                    readings,
+                ]
+                .spacing(16)
+                .align_y(Alignment::Center)
+                .into()
+            } else {
+                readings.into()
+            };
             cards.push(
-                container(card)
-                    .padding(20)
-                    .width(FillPortion(1))
-                    .style(style::box_style(style::PANEL, false, 9.0))
-                    .into(),
+                container(
+                    column![heading(group.trim(), 16), rule::horizontal(1), body].spacing(15),
+                )
+                .padding(20)
+                .width(FillPortion(1))
+                .style(style::box_style(style::PANEL, false, 9.0))
+                .into(),
             );
         }
         let mut cooling = column![heading("Cooling", 16), rule::horizontal(1)].spacing(13);

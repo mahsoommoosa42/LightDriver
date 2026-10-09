@@ -294,3 +294,65 @@ impl canvas::Program<Message> for SensorHistory {
         vec![geometry]
     }
 }
+
+pub struct RadialLoad {
+    pub value: Option<f32>,
+}
+impl canvas::Program<Message> for RadialLoad {
+    type State = GeometryState<Option<f32>>;
+    fn draw(
+        &self,
+        state: &Self::State,
+        renderer: &Renderer,
+        _: &Theme,
+        bounds: Rectangle,
+        _: mouse::Cursor,
+    ) -> Vec<Geometry> {
+        let value = self
+            .value
+            .filter(|v| v.is_finite() && (0.0..=100.0).contains(v));
+        state.update(value);
+        let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
+            let center = Point::new(bounds.width / 2.0, bounds.height / 2.0);
+            let radius = (bounds.width.min(bounds.height) / 2.0 - 9.0).max(1.0);
+            let start = std::f32::consts::PI * 0.75;
+            let sweep = std::f32::consts::PI * 1.5;
+            let arc = |end| {
+                Path::new(|builder| {
+                    builder.arc(canvas::path::Arc {
+                        center,
+                        radius,
+                        start_angle: iced::Radians(start),
+                        end_angle: iced::Radians(end),
+                    })
+                })
+            };
+            let stroke = Stroke::default()
+                .with_width(6.0)
+                .with_line_cap(canvas::LineCap::Round);
+            frame.stroke(&arc(start + sweep), stroke.with_color(style::LINE));
+            if let Some(v) = value.filter(|v| *v > 0.0) {
+                frame.stroke(
+                    &arc(start + sweep * v / 100.0),
+                    stroke.with_color(style::ACCENT),
+                );
+            }
+            frame.fill_text(Text {
+                content: value
+                    .map(|v| format!("{v:.0}%"))
+                    .unwrap_or_else(|| "—".into()),
+                position: Point::new(center.x, center.y - 3.0),
+                color: if value.is_some() {
+                    style::FG
+                } else {
+                    style::MUTED
+                },
+                size: 25.0.into(),
+                align_x: iced::alignment::Horizontal::Center.into(),
+                align_y: iced::alignment::Vertical::Center,
+                ..Default::default()
+            });
+        });
+        vec![geometry]
+    }
+}

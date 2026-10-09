@@ -35,7 +35,11 @@ impl Workbench {
         .align_y(Alignment::Center);
         let title = row![
             column![
-                label("DEVICE WORKSPACE"),
+                label(if self.tab == Tab::Diagnostics {
+                    "SYSTEM WORKSPACE"
+                } else {
+                    "DEVICE WORKSPACE"
+                }),
                 heading("Understand. Control. Verify.", 26)
             ]
             .spacing(6),

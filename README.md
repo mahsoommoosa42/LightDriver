@@ -87,7 +87,7 @@ Iced desktop ── bounded, versioned local IPC ── Rust service
 
 All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The API currently contains snapshot requests only. Future control commands belong in the service, alongside validation and device-specific capability checks.
 
-The initial service is a **per-user background process**, not a privileged Windows Service. Remote control, privileged motherboard drivers, automatic startup, and packaging need separate design decisions. Local IPC currently relies on OS default permissions; authenticated control commands and explicit access policy must be designed before enabling writes or remote access.
+The initial service is a **per-user background process**, not a privileged Windows Service. Remote control, privileged motherboard drivers, automatic startup, and installer distribution need separate design decisions. Local IPC currently relies on OS default permissions; authenticated control commands and explicit access policy must be designed before enabling writes or remote access.
 
 ## Development
 
@@ -142,6 +142,8 @@ The JSON records redraw-request intervals after a two-second warmup, not mouse-t
 
 ## System diagnostics
 
-The Diagnostics tab contains Basic and Advanced views. Basic groups essential readings; Advanced adds individual sensors, source/freshness, errors and selectable rolling history. Read-only Rust adapters are implemented for AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed driver/API support. CPU package temperature/power and motherboard fan sensors need separate native adapters. Missing measurements remain Unavailable; component power is never presented as wall power. See [coverage and semantics](docs/diagnostics.md).
+The Diagnostics tab contains Basic and Advanced views. Basic uses radial bars for CPU, GPU and memory load alongside temperature, power and cooling readings; Advanced adds individual sensors, source/freshness, errors and selectable rolling history. Read-only Rust adapters are implemented for AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed driver/API support. CPU package temperature/power and motherboard fan sensors need separate native adapters. Missing measurements remain Unavailable; component power is never presented as wall power. See [coverage and semantics](docs/diagnostics.md).
 
 After updating from an older build, restart the local service: snapshot protocol version 2 includes system diagnostics. Windows CI builds an optimized portable app artifact containing both executables and the launcher.
+
+![Basic Diagnostics with simulated radial load readings](docs/diagnostics-basic.png)
