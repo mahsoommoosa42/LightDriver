@@ -47,7 +47,16 @@ fn demo_service_owns_endpoint_survives_clients_and_never_falls_back_to_live() {
         if output.status.success() {
             let snapshot: Snapshot = serde_json::from_slice(&output.stdout).unwrap();
             assert_eq!(snapshot.mode, Mode::Demo);
-            if snapshot.devices[0].telemetry.is_some() {
+            if snapshot.devices[0].telemetry.is_some() && !snapshot.diagnostics.sensors.is_empty() {
+                assert!(
+                    snapshot
+                        .diagnostics
+                        .sensors
+                        .iter()
+                        .filter(|s| s.sample.is_some())
+                        .all(|s| s.source == "Simulated data")
+                );
+                assert!(serde_json::to_vec(&snapshot).unwrap().len() < lightdriver_ipc::MAX_FRAME);
                 break;
             }
         }
@@ -99,4 +108,33 @@ fn demo_service_owns_endpoint_survives_clients_and_never_falls_back_to_live() {
         "Service must survive earlier client exits"
     );
     assert!(service.0.try_wait().unwrap().is_none());
+}
+
+#[test]
+fn full_diagnostics_history_fits_the_ipc_frame_budget() {
+    let mut collector = lightdriver_monitoring::Collector::new(Mode::Demo);
+    let mut data = collector.poll();
+    for _ in 0..100 {
+        data = collector.poll();
+    }
+    let prototype = data
+        .sensors
+        .into_iter()
+        .find(|s| !s.history.is_empty())
+        .unwrap();
+    let mut snapshot = Snapshot::empty(Mode::Demo);
+    for i in 0..lightdriver_core::SENSOR_LIMIT {
+        let mut sensor = prototype.clone();
+        sensor.id = format!("gpu.{i}.temperature");
+        sensor.group = "G".repeat(256);
+        sensor.label = "S".repeat(64);
+        sensor.source = "P".repeat(64);
+        snapshot.diagnostics.sensors.push(sensor);
+    }
+    let bytes = serde_json::to_vec(&snapshot).unwrap();
+    assert!(
+        bytes.len() < lightdriver_ipc::MAX_FRAME,
+        "Diagnostics exceeded IPC budget: {}",
+        bytes.len()
+    );
 }

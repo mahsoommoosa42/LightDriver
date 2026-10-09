@@ -1,0 +1,15 @@
+[package]
+name = "lightdriver-monitoring"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+lightdriver-core.workspace = true
+sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
+
+[target.'cfg(windows)'.dependencies]
+adlx = "=0.0.0-alpha.1"
+libloading = "0.8"
+nvml-wrapper = "0.13.0"

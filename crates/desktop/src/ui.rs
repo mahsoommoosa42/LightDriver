@@ -56,8 +56,14 @@ impl Workbench {
         .align_y(Alignment::Center);
         let footer = row![
             label(format!(
-                "v{} · Profiles / Devices / Diagnostics",
-                env!("CARGO_PKG_VERSION")
+                "v{} · {} · {}",
+                env!("CARGO_PKG_VERSION"),
+                self.renderer,
+                if cfg!(debug_assertions) {
+                    "Debug"
+                } else {
+                    "Release"
+                }
             )),
             label(&self.status)
                 .width(Fill)
@@ -80,6 +86,7 @@ impl Workbench {
                         .padding([20, 28])
                         .width(Fill)
                 )
+                .id("device-workspace")
                 .width(Fill)
             ]
             .height(Fill),
@@ -96,7 +103,7 @@ impl Workbench {
         let mut devices = Column::new().spacing(10).push(label("CONTROL PATHS"));
         for device in &self.snapshot.devices {
             let is_board = device.id == "motherboard";
-            let selected = self.selected_device == device.id;
+            let selected = self.tab != Tab::Diagnostics && self.selected_device == device.id;
             let content = row![
                 text(if is_board { "▧" } else { "◉" })
                     .size(18)
@@ -153,6 +160,13 @@ impl Workbench {
         container(
             column![
                 devices,
+                rule::horizontal(1),
+                selector(
+                    text("System diagnostics").size(13),
+                    Message::Tab(Tab::Diagnostics),
+                    self.tab == Tab::Diagnostics
+                )
+                .width(Fill),
                 Space::new().height(Fill),
                 label("Support is verified per capability."),
                 text(service_status).size(12).color(if self.connected {
@@ -175,6 +189,9 @@ impl Workbench {
     }
 
     fn device_workspace(&self) -> Element<'_, Message> {
+        if self.tab == Tab::Diagnostics {
+            return self.diagnostics();
+        }
         let device = self.selected();
         let mut content = column![
             row![
@@ -270,6 +287,7 @@ impl Workbench {
             Tab::Lighting => self.lighting(),
             Tab::Capabilities => self.capabilities(),
             Tab::Verification => self.verification(),
+            Tab::Diagnostics => self.diagnostics(),
         });
         content.into()
     }

@@ -1,5 +1,7 @@
 //! Models shared by the service, device adapters, and native application.
-pub const PROTOCOL_VERSION: u16 = 1;
+mod diagnostics;
+pub use diagnostics::*;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const STALE_AFTER_MS: u64 = 5_000;
 pub const HISTORY_LIMIT: usize = 60;
 
@@ -155,6 +157,7 @@ pub struct Snapshot {
     pub mode: Mode,
     pub generated_at_ms: u64,
     pub devices: Vec<Device>,
+    pub diagnostics: Diagnostics,
 }
 
 impl Snapshot {
@@ -165,6 +168,7 @@ impl Snapshot {
             mode,
             generated_at_ms: now_ms(),
             devices: vec![kraken_target(), motherboard_target()],
+            diagnostics: Diagnostics::default(),
         }
     }
 
@@ -191,6 +195,21 @@ impl Snapshot {
                 report.push_str(&format!("  {}: {}\n", c.name, c.support.label()));
             }
             report.push('\n');
+        }
+        report.push_str("System sensors\n");
+        for s in &self.diagnostics.sensors {
+            let reading = s
+                .sample
+                .as_ref()
+                .map(|v| format!("{:.2} {} at {}", v.value, s.unit.label(), v.at_ms))
+                .unwrap_or_else(|| "Unavailable".into());
+            report.push_str(&format!(
+                "{} | {} | {:?} | {} | {} | {}\n",
+                s.group, s.label, s.status, reading, s.source, s.detail
+            ));
+        }
+        for p in &self.diagnostics.providers {
+            report.push_str(&format!("Collector {}: {}\n", p.name, p.detail));
         }
         report
     }

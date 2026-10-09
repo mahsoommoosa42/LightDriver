@@ -13,7 +13,7 @@ use std::{
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-const MAX_FRAME: usize = 128 * 1024;
+pub const MAX_FRAME: usize = 128 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod charts;
+mod diagnostics;
+mod performance;
 mod persistence;
 mod style;
 mod ui;
@@ -18,13 +20,15 @@ pub enum Tab {
     Lighting,
     Capabilities,
     Verification,
+    Diagnostics,
 }
 impl Tab {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 5] = [
         Self::Profile,
         Self::Lighting,
         Self::Capabilities,
         Self::Verification,
+        Self::Diagnostics,
     ];
     fn label(self) -> &'static str {
         match self {
@@ -32,6 +36,7 @@ impl Tab {
             Self::Lighting => "Lighting",
             Self::Capabilities => "Capabilities",
             Self::Verification => "Verification",
+            Self::Diagnostics => "Diagnostics",
         }
     }
 }
@@ -39,6 +44,10 @@ impl Tab {
 #[derive(Debug, Clone)]
 pub enum Message {
     Tick,
+    Advanced(bool),
+    Sensor(String),
+    Renderer(iced::system::Information),
+    Frame(Instant),
     Snapshot(Result<Snapshot, String>),
     Reconnect,
     Mode(Mode),
@@ -61,6 +70,8 @@ struct Workbench {
     connected: bool,
     selected_device: String,
     tab: Tab,
+    diagnostics_advanced: bool,
+    selected_sensor: String,
     preset: Option<Preset>,
     draft: Draft,
     data_directory: PathBuf,
@@ -70,6 +81,9 @@ struct Workbench {
     booted: Instant,
     capture_path: Option<PathBuf>,
     capture_started: bool,
+    renderer: String,
+    adapter: String,
+    benchmark: Option<performance::Benchmark>,
 }
 
 impl Workbench {
@@ -95,6 +109,7 @@ impl Workbench {
             Some("lighting") => Tab::Lighting,
             Some("capabilities") => Tab::Capabilities,
             Some("verification") => Tab::Verification,
+            Some("diagnostics") => Tab::Diagnostics,
             _ => Tab::Profile,
         };
         let mut state = Self {
@@ -103,6 +118,8 @@ impl Workbench {
             connected: false,
             selected_device: value("--device").unwrap_or_else(|| "kraken-x3".into()),
             tab,
+            diagnostics_advanced: args.iter().any(|a| a == "--advanced"),
+            selected_sensor: "cpu.load".into(),
             preset: None,
             draft,
             data_directory,
@@ -112,9 +129,15 @@ impl Workbench {
             booted: Instant::now(),
             capture_path: value("--capture").map(PathBuf::from),
             capture_started: false,
+            renderer: "Starting renderer".into(),
+            adapter: String::new(),
+            benchmark: value("--benchmark").map(|p| performance::Benchmark::new(PathBuf::from(p))),
         };
         let task = state.fetch(!args.iter().any(|a| a == "--no-autostart"));
-        (state, task)
+        (
+            state,
+            Task::batch([task, iced::system::information().map(Message::Renderer)]),
+        )
     }
 
     fn fetch(&mut self, try_start: bool) -> Task<Message> {
@@ -173,14 +196,62 @@ impl Workbench {
             "Offline; snapshot is historical"
         };
         format!(
-            "Local service: {connection}\n{}",
+            "Renderer: {}\nAdapter: {}\nLocal service: {connection}\n{}",
+            self.renderer,
+            self.adapter,
             self.snapshot.diagnostic_report()
         )
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Advanced(value) => self.diagnostics_advanced = value,
+            Message::Sensor(id) => self.selected_sensor = id,
+            Message::Renderer(info) => {
+                self.renderer = info.graphics_backend;
+                self.adapter = info.graphics_adapter;
+            }
+            Message::Frame(at) => {
+                if let Some(benchmark) = &mut self.benchmark {
+                    if benchmark.frame(at) {
+                        if let Err(e) = benchmark.save(&self.renderer, &self.adapter) {
+                            eprintln!("Benchmark failed: {e}");
+                        }
+                        return iced::exit();
+                    }
+                    let count = benchmark.count();
+                    self.draft.curve.points[0].duty = 60 + (count % 15) as u8;
+                    self.draft.lighting_brightness = 20 + (count % 81) as u8;
+                    let scroll = iced::widget::operation::snap_to(
+                        "device-workspace",
+                        iced::widget::scrollable::RelativeOffset {
+                            x: 0.0,
+                            y: (count % 80) as f32 / 80.0,
+                        },
+                    );
+                    if count > 0 && count.is_multiple_of(20) {
+                        let size = if count.is_multiple_of(40) {
+                            iced::Size::new(1180.0, 880.0)
+                        } else {
+                            iced::Size::new(980.0, 720.0)
+                        };
+                        return Task::batch([
+                            scroll,
+                            window::latest().and_then(move |id| window::resize(id, size)),
+                        ]);
+                    }
+                    return scroll;
+                }
+            }
             Message::Tick => {
+                if let Some(benchmark) = &self.benchmark
+                    && benchmark.timed_out()
+                {
+                    if let Err(e) = benchmark.save(&self.renderer, &self.adapter) {
+                        eprintln!("Benchmark failed: {e}");
+                    }
+                    return iced::exit();
+                }
                 if self.capture_path.is_some()
                     && !self.capture_started
                     && self.booted.elapsed() >= Duration::from_secs(3)
@@ -233,7 +304,12 @@ impl Workbench {
                 };
                 return self.fetch(true);
             }
-            Message::SelectDevice(id) => self.selected_device = id,
+            Message::SelectDevice(id) => {
+                self.selected_device = id;
+                if self.tab == Tab::Diagnostics {
+                    self.tab = Tab::Profile;
+                }
+            }
             Message::Tab(tab) => self.tab = tab,
             Message::Preset(preset) => {
                 self.preset = Some(preset);
@@ -277,6 +353,10 @@ impl Workbench {
             }
             Message::Captured(screenshot) => {
                 if let Some(path) = &self.capture_path {
+                    let _ = std::fs::write(
+                        path.with_extension("renderer.txt"),
+                        format!("Renderer: {}\nAdapter: {}\n", self.renderer, self.adapter),
+                    );
                     if let Err(error) = save_capture(path, screenshot) {
                         eprintln!("Capture failed: {error}");
                     }
@@ -288,7 +368,12 @@ impl Workbench {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(Duration::from_millis(1000)).map(|_| Message::Tick)
+        let polling = iced::time::every(Duration::from_millis(1000)).map(|_| Message::Tick);
+        if self.benchmark.is_some() {
+            Subscription::batch([polling, window::frames().map(Message::Frame)])
+        } else {
+            polling
+        }
     }
     fn theme(&self) -> Theme {
         style::theme()
@@ -426,6 +511,37 @@ mod tests {
         assert_eq!(
             workbench.device_status(workbench.selected()),
             "Stale telemetry"
+        );
+    }
+
+    #[test]
+    fn diagnostics_hide_cached_values_after_service_disconnect() {
+        let (mut workbench, _) = Workbench::new();
+        let mut snapshot = Snapshot::empty(Mode::Live);
+        snapshot.diagnostics.sensors.push(lightdriver_core::Sensor {
+            id: "gpu.power".into(),
+            group: "GPU".into(),
+            label: "Power".into(),
+            unit: lightdriver_core::Unit::Watts,
+            source: "test".into(),
+            basic: true,
+            status: lightdriver_core::SensorStatus::Available,
+            detail: String::new(),
+            sample: Some(lightdriver_core::SensorSample {
+                at_ms: now_ms(),
+                value: 100.0,
+            }),
+            history: vec![],
+        });
+        let _ = workbench.update(Message::Snapshot(Ok(snapshot)));
+        assert_eq!(
+            workbench.diagnostic_value(&workbench.snapshot.diagnostics.sensors[0]),
+            Some(100.0)
+        );
+        let _ = workbench.update(Message::Snapshot(Err("offline".into())));
+        assert_eq!(
+            workbench.diagnostic_value(&workbench.snapshot.diagnostics.sensors[0]),
+            None
         );
     }
 }

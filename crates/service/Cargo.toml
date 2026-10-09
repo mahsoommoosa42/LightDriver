@@ -9,5 +9,6 @@ publish.workspace = true
 lightdriver-core.workspace = true
 lightdriver-ipc.workspace = true
 lightdriver-devices.workspace = true
+lightdriver-monitoring.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

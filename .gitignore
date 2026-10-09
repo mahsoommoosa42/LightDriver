@@ -7,3 +7,4 @@
 /.aws/
 /.env
 /.env.*
+/dist/

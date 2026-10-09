@@ -26,4 +26,15 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
       - name: Build desktop and service
-        run: cargo build --workspace --locked
+        run: cargo build --workspace --release --locked
+      - name: Package portable app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist/LightDriver/docs -Force
+          Copy-Item target/release/lightdriver-desktop.exe,target/release/lightdriver-service.exe,LightDriver.cmd,README.md dist/LightDriver/
+          Copy-Item docs/* dist/LightDriver/docs/
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LightDriver-Windows-x64
+          path: dist/LightDriver/
+          if-no-files-found: error
