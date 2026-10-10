@@ -1306,6 +1306,7 @@ dependencies = [
  "png",
  "serde_json",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1325,6 +1326,8 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "widestring",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1336,6 +1339,7 @@ dependencies = [
  "lightdriver-core",
  "nvml-wrapper",
  "sysinfo",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

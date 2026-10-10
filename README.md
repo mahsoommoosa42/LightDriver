@@ -81,13 +81,13 @@ Iced desktop ── bounded, versioned local IPC ── Rust service
 | `lightdriver-core` | Device/capability models, telemetry freshness, curve/draft validation |
 | `lightdriver-ipc` | Versioned length-prefixed JSON over local sockets; Windows named pipes; bounded frames/timeouts |
 | `lightdriver-devices` | Read-only Windows Kraken HID adapter and isolated demo adapter |
-| `lightdriver-monitoring` | Read-only CPU/memory and AMD/NVIDIA/Intel GPU collectors; bounded sensor histories |
+| `lightdriver-monitoring` | Read-only CPU topology/load/clocks, optional AMD CPU SDK and AMD/NVIDIA/Intel GPU collectors |
 | `lightdriver-service` | Single owner per user/mode, polling and local snapshot requests |
 | `lightdriver-desktop` | Native Workbench, local draft editing, capability evidence, diagnostic export |
 
-All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The API currently contains snapshot requests only. Future control commands belong in the service, alongside validation and device-specific capability checks.
+All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The local API contains snapshot requests and an explicit handoff that only ordinary live services accept when enabling CPU sensors. Future control commands belong in the service, alongside validation and device-specific capability checks.
 
-The initial service is a **per-user background process**, not a privileged Windows Service. Remote control, privileged motherboard drivers, automatic startup, and installer distribution need separate design decisions. Local IPC currently relies on OS default permissions; authenticated control commands and explicit access policy must be designed before enabling writes or remote access.
+The initial service is a **per-user background process**, not a privileged Windows Service. Remote control, privileged motherboard drivers, automatic startup, and installer distribution need separate design decisions. Windows IPC grants access to the current account, administrators and SYSTEM, with remote pipe clients disabled. CPU sensor elevation is an explicit per-session action. Control-command authorization must be designed before enabling hardware writes or remote access.
 
 ## Development
 
@@ -106,7 +106,7 @@ Native rendering can be captured for review:
 .\target\release\lightdriver-desktop.exe --demo --tab lighting --capture .data\lighting.png
 ```
 
-`--tab` also accepts `capabilities`, `verification` and `diagnostics`. Use `--advanced` to open Diagnostics in Advanced view. The app captures its native window after three seconds and exits; the independent service remains running.
+`--tab` also accepts `capabilities`, `verification` and `diagnostics`. Use `--cores` to expand the physical-core diagram in Diagnostics. The app captures its native window after three seconds and exits; the independent service remains running.
 
 For rendering checks, `--size 980x720` selects the minimum supported window size, `--device motherboard` selects the recorded board target, and `--no-autostart` prevents the initial connection attempt from launching a service.
 
@@ -142,8 +142,10 @@ The JSON records redraw-request intervals after a two-second warmup, not mouse-t
 
 ## System diagnostics
 
-The Diagnostics tab contains Basic and Advanced views. Basic uses radial bars for CPU, GPU and memory load alongside temperature, power and cooling readings; Advanced adds individual sensors, source/freshness, errors and selectable rolling history. Read-only Rust adapters are implemented for AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed driver/API support. CPU package temperature/power and motherboard fan sensors need separate native adapters. Missing measurements remain Unavailable; component power is never presented as wall power. See [coverage and semantics](docs/diagnostics.md).
+The Diagnostics tab focuses on CPU/GPU load, temperature and clock speed. Cached radial bars show load; Show cores expands physical-core tiles with SMT bars, OS clocks and shared-L3 grouping for CCX-like layouts. AMD CPU package temperature uses an optional installed vendor SDK through the local Rust service; Enable CPU sensors requests Windows UAC while keeping the UI at normal permissions. Per-core temperature identity mapping and Intel CPU temperature integration remain pending. GPU adapters cover AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed APIs. See [coverage and semantics](docs/diagnostics.md).
 
-After updating from an older build, restart the local service: snapshot protocol version 2 includes system diagnostics. Windows CI builds an optimized portable app artifact containing both executables and the launcher.
+After updating from an older build, restart the local service: snapshot protocol version 3 includes CPU topology and the explicit sensor-service handoff. Windows CI builds an optimized portable app artifact containing both executables and the launcher.
 
-![Basic Diagnostics with simulated radial load readings](docs/diagnostics-basic.png)
+![Diagnostics with simulated CPU and GPU readings](docs/diagnostics-basic.png)
+
+![Physical-core diagram with simulated SMT loads and shared L3 groups](docs/diagnostics-cores.png)

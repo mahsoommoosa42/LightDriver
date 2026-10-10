@@ -1,7 +1,9 @@
 //! Models shared by the service, device adapters, and native application.
 mod diagnostics;
+mod topology;
 pub use diagnostics::*;
-pub const PROTOCOL_VERSION: u16 = 2;
+pub use topology::*;
+pub const PROTOCOL_VERSION: u16 = 3;
 pub const STALE_AFTER_MS: u64 = 5_000;
 pub const HISTORY_LIMIT: usize = 60;
 

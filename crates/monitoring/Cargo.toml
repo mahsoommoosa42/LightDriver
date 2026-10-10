@@ -13,3 +13,5 @@ sysinfo = { version = "0.33.1", default-features = false, features = ["system"] 
 adlx = "=0.0.0-alpha.1"
 libloading = "0.8"
 nvml-wrapper = "0.13.0"
+
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_SystemInformation", "Win32_System_Performance"] }

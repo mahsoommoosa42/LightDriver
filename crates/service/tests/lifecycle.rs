@@ -107,11 +107,18 @@ fn demo_service_owns_endpoint_survives_clients_and_never_falls_back_to_live() {
         output.status.success(),
         "Service must survive earlier client exits"
     );
+    // The actual demo server rejects the handoff command and remains available.
+    let handoff = command(&scope)
+        .args(["--demo", "--cpu-sensor-handoff"])
+        .output()
+        .unwrap();
+    assert!(handoff.status.success());
+    assert_eq!(String::from_utf8_lossy(&handoff.stdout).trim(), "false");
     assert!(service.0.try_wait().unwrap().is_none());
 }
 
 #[test]
-fn full_diagnostics_history_fits_the_ipc_frame_budget() {
+fn diagnostic_inventory_fits_the_ipc_frame_budget() {
     let mut collector = lightdriver_monitoring::Collector::new(Mode::Demo);
     let mut data = collector.poll();
     for _ in 0..100 {
@@ -120,9 +127,10 @@ fn full_diagnostics_history_fits_the_ipc_frame_budget() {
     let prototype = data
         .sensors
         .into_iter()
-        .find(|s| !s.history.is_empty())
+        .find(|s| s.sample.is_some())
         .unwrap();
     let mut snapshot = Snapshot::empty(Mode::Demo);
+    snapshot.diagnostics.cpu_topology = data.cpu_topology;
     for i in 0..lightdriver_core::SENSOR_LIMIT {
         let mut sensor = prototype.clone();
         sensor.id = format!("gpu.{i}.temperature");

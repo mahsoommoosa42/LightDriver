@@ -70,6 +70,29 @@ struct DeviceProperties {
     subdevices: u32,
     strings: [[c_char; 64]; 6],
 }
+#[repr(C)]
+struct FrequencyProperties {
+    stype: u32,
+    next: *mut c_void,
+    kind: u32,
+    subdevice: u32,
+    subdevice_id: u32,
+    can_control: u32,
+    throttle_events: u32,
+    min: f64,
+    max: f64,
+}
+#[repr(C)]
+struct FrequencyState {
+    stype: u32,
+    next: *mut c_void,
+    voltage: f64,
+    request: f64,
+    tdp: f64,
+    efficient: f64,
+    actual: f64,
+    throttle_reasons: u32,
+}
 pub struct Intel {
     library: Library,
     previous: HashMap<String, (u64, u64)>,
@@ -284,6 +307,44 @@ impl Intel {
                         true,
                         power,
                     ));
+                    let clock_read = (|| {
+                        let domains = self.enumerate(b"zesDeviceEnumFrequencyDomains\0", device)?;
+                        let properties_get = self
+                            .library
+                            .get::<unsafe extern "system" fn(
+                                Handle,
+                                *mut FrequencyProperties,
+                            ) -> ResultCode>(
+                                b"zesFrequencyGetProperties\0"
+                            )
+                            .map_err(|_| "Frequency properties API unavailable".to_string())?;
+                        let state_get=self.library.get::<unsafe extern "system" fn(Handle,*mut FrequencyState)->ResultCode>(b"zesFrequencyGetState\0").map_err(|_|"Frequency state API unavailable".to_string())?;
+                        for domain in domains {
+                            let mut properties: FrequencyProperties = std::mem::zeroed();
+                            properties.stype = 9;
+                            if properties_get(domain, &mut properties) != 0
+                                || properties.kind != 0
+                                || properties.subdevice != 0
+                            {
+                                continue;
+                            }
+                            let mut state: FrequencyState = std::mem::zeroed();
+                            state.stype = 0x1b;
+                            state.actual = f64::NAN;
+                            checked(state_get(domain, &mut state))?;
+                            return Ok(state.actual);
+                        }
+                        Err("Root GPU frequency domain unavailable".into())
+                    })();
+                    sensors.push(sensor(
+                        &format!("{id}.clock"),
+                        group,
+                        "GPU clock",
+                        Unit::Mhz,
+                        "Intel · Level Zero Sysman",
+                        true,
+                        clock_read,
+                    ));
                     let mut load_read = Err("Combined GPU engine activity is not exposed".into());
                     if let Ok(engines) = self.enumerate(b"zesDeviceEnumEngineGroups\0", device)
                         && let Ok(get) = self.library.get::<unsafe extern "system" fn(
@@ -325,6 +386,9 @@ mod tests {
     #[test]
     fn sdk_layouts_match_windows_x64_headers() {
         assert_eq!(std::mem::size_of::<Counter>(), 16);
+        assert_eq!(std::mem::size_of::<FrequencyProperties>(), 56);
+        assert_eq!(std::mem::size_of::<FrequencyState>(), 64);
+        assert_eq!(std::mem::offset_of!(FrequencyState, actual), 48);
         assert_eq!(std::mem::size_of::<TemperatureProperties>(), 56);
         assert_eq!(std::mem::offset_of!(CoreProperties, name), 112);
         assert_eq!(std::mem::size_of::<CoreProperties>(), 368);

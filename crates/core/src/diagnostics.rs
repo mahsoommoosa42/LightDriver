@@ -3,7 +3,8 @@ use crate::STALE_AFTER_MS;
 use serde::{Deserialize, Serialize};
 
 pub const SENSOR_LIMIT: usize = 48;
-pub const SENSOR_HISTORY_LIMIT: usize = 30;
+// Basic diagnostics transports current readings only; history is reserved for future use.
+pub const SENSOR_HISTORY_LIMIT: usize = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Unit {
@@ -90,6 +91,8 @@ pub struct Provider {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Diagnostics {
+    pub cpu_elevation_needed: bool,
+    pub cpu_topology: crate::CpuTopology,
     pub sensors: Vec<Sensor>,
     pub providers: Vec<Provider>,
 }

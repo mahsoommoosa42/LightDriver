@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod charts;
+mod cpu_sensors;
 mod diagnostics;
 mod performance;
 mod persistence;
@@ -44,8 +45,9 @@ impl Tab {
 #[derive(Debug, Clone)]
 pub enum Message {
     Tick,
-    Advanced(bool),
-    Sensor(String),
+    CoreDetails(bool),
+    EnableCpuSensors,
+    CpuSensorsEnabled(Result<Snapshot, String>),
     Renderer(iced::system::Information),
     Frame(Instant),
     Snapshot(Result<Snapshot, String>),
@@ -70,8 +72,9 @@ struct Workbench {
     connected: bool,
     selected_device: String,
     tab: Tab,
-    diagnostics_advanced: bool,
-    selected_sensor: String,
+    show_cpu_cores: bool,
+    cpu_enable_in_flight: bool,
+    enable_cpu_on_connect: bool,
     preset: Option<Preset>,
     draft: Draft,
     data_directory: PathBuf,
@@ -118,8 +121,9 @@ impl Workbench {
             connected: false,
             selected_device: value("--device").unwrap_or_else(|| "kraken-x3".into()),
             tab,
-            diagnostics_advanced: args.iter().any(|a| a == "--advanced"),
-            selected_sensor: "cpu.load".into(),
+            show_cpu_cores: args.iter().any(|a| a == "--cores"),
+            cpu_enable_in_flight: false,
+            enable_cpu_on_connect: args.iter().any(|a| a == "--enable-cpu-sensors"),
             preset: None,
             draft,
             data_directory,
@@ -141,7 +145,7 @@ impl Workbench {
     }
 
     fn fetch(&mut self, try_start: bool) -> Task<Message> {
-        if self.poll_in_flight {
+        if self.poll_in_flight || self.cpu_enable_in_flight {
             return Task::none();
         }
         self.poll_in_flight = true;
@@ -205,8 +209,34 @@ impl Workbench {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Advanced(value) => self.diagnostics_advanced = value,
-            Message::Sensor(id) => self.selected_sensor = id,
+            Message::CoreDetails(value) => self.show_cpu_cores = value,
+            Message::EnableCpuSensors => {
+                if self.mode != Mode::Live
+                    || self.cpu_enable_in_flight
+                    || !self.connected
+                    || !self.snapshot.diagnostics.cpu_elevation_needed
+                {
+                    return Task::none();
+                }
+                self.cpu_enable_in_flight = true;
+                self.connected = false;
+                self.status = "Waiting for Windows permission to enable CPU sensors".into();
+                return Task::perform(cpu_sensors::enable(), Message::CpuSensorsEnabled);
+            }
+            Message::CpuSensorsEnabled(result) => {
+                self.cpu_enable_in_flight = false;
+                self.booted = Instant::now();
+                match result {
+                    Ok(snapshot) => {
+                        self.status = "CPU sensor service started · Read-only monitoring".into();
+                        return self.update(Message::Snapshot(Ok(snapshot)));
+                    }
+                    Err(error) => {
+                        self.status = error;
+                        return self.fetch(true);
+                    }
+                }
+            }
             Message::Renderer(info) => {
                 self.renderer = info.graphics_backend;
                 self.adapter = info.graphics_adapter;
@@ -252,7 +282,8 @@ impl Workbench {
                     }
                     return iced::exit();
                 }
-                if self.capture_path.is_some()
+                if !self.cpu_enable_in_flight
+                    && self.capture_path.is_some()
                     && !self.capture_started
                     && self.booted.elapsed() >= Duration::from_secs(3)
                 {
@@ -275,6 +306,13 @@ impl Workbench {
                         self.snapshot = snapshot;
                         self.connected = true;
                         self.service_error = None;
+                        if self.enable_cpu_on_connect
+                            && self.mode == Mode::Live
+                            && self.snapshot.diagnostics.cpu_elevation_needed
+                        {
+                            self.enable_cpu_on_connect = false;
+                            return self.update(Message::EnableCpuSensors);
+                        }
                     }
                     Ok(_) => {
                         self.connected = false;
@@ -289,7 +327,7 @@ impl Workbench {
             }
             Message::Reconnect => return self.fetch(true),
             Message::Mode(mode) => {
-                if self.poll_in_flight || self.mode == mode {
+                if self.poll_in_flight || self.cpu_enable_in_flight || self.mode == mode {
                     return Task::none();
                 }
                 self.mode = mode;
@@ -543,5 +581,23 @@ mod tests {
             workbench.diagnostic_value(&workbench.snapshot.diagnostics.sensors[0]),
             None
         );
+    }
+    #[test]
+    fn cpu_elevation_is_explicit_live_only_and_blocks_repeat_requests() {
+        let (mut state, _) = Workbench::new();
+        state.mode = Mode::Demo;
+        state.connected = true;
+        state.snapshot.diagnostics.cpu_elevation_needed = true;
+        let _ = state.update(Message::EnableCpuSensors);
+        assert!(!state.cpu_enable_in_flight);
+        state.mode = Mode::Live;
+        let _ = state.update(Message::EnableCpuSensors);
+        assert!(state.cpu_enable_in_flight);
+        assert!(!state.connected);
+        let _ = state.update(Message::Mode(Mode::Demo));
+        assert_eq!(state.mode, Mode::Live);
+        let _ = state.update(Message::CpuSensorsEnabled(Err("Canceled".into())));
+        assert!(!state.cpu_enable_in_flight);
+        assert_eq!(state.status, "Canceled");
     }
 }

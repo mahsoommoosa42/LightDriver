@@ -1,50 +1,50 @@
 # Milestone verification
 
-Verified on 9 October 2026, Windows x64, Rust 1.99.0.
+Updated on 10 October 2026, Windows x64, Rust 1.99.0.
 
 ## Software checks
 
-- The full Cargo workspace builds in release mode.
-- `cargo fmt --all -- --check` and workspace Clippy with `-D warnings` pass.
-- 17 automated tests pass, including actual demo service/named-pipe lifecycle tests.
+- The complete Cargo workspace builds in release mode.
+- Formatting and workspace Clippy with `-D warnings` pass.
+- 26 automated tests pass, including actual demo service/named-pipe lifecycle tests.
 - A second service cannot claim the same per-user/mode endpoint. Live clients cannot receive demo data.
-- Invalid draft saves preserve the previous valid file; replacement saves and reloads work on Windows.
-- Missing, stale, future, invalid and offline sensor values remain distinct from valid zero readings. Disconnects hide the previous values and history.
-- Sensor histories and IPC payloads are bounded. A maximum-size diagnostics fixture fits the 128 KiB transport limit.
-- Intel x64 ABI layouts and counter units, first-sample, reset and zero-interval behavior are checked with synthetic data.
-- Demo does not initialize vendor/system collectors or open hardware.
+- The CPU-sensor handoff policy denies demo and elevated processes. An actual demo IPC request is rejected without stopping its service.
+- The account-specific Windows security descriptor is validated. Native verification confirms the ordinary UI can connect after UAC starts the elevated service.
+- Missing, stale, future, invalid and offline readings remain distinct from valid zeros. Disconnects hide previous sensor values.
+- Synthetic topology fixtures cover SMT, multiple processor groups, shared L3, hybrid efficiency classes, malformed records and overlapping affinities.
+- A 256-core / 512-thread topology plus a full scalar sensor inventory fits the existing 128 KiB IPC frame budget. Basic diagnostics sends current readings without scalar history.
+- AMD CPU MSVC x64 structures and virtual dispatch were checked against SDK 3.1.1.5478 headers/compiler layouts. Synthetic dispatch tests cover 1 Hz throttling, original timestamps, missing output fields and failures.
+- Intel x64 ABI layouts, frequency structures and energy/activity counter semantics are checked with synthetic data.
+- Demo never initializes system/vendor collectors or opens hardware. Invalid draft saves preserve the previous file.
 
-The [Windows CI run for the diagnostics milestone](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37967280323) passed formatting, Clippy, all 17 tests, release compilation and portable artifact packaging. The artifact contains both executables and the launcher. These checks do not establish physical NVIDIA/Intel sensor coverage.
+The earlier [Windows diagnostics CI run](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37967280323) and [radial-load CI run](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37968772415) passed checks, release compilation and portable packaging. Portable artifacts include both executables and the launcher. These runs predate the CPU SDK/topology update; its latest validation is recorded in the repository's Actions tab.
 
 ## Native UI and performance
 
-Rendered and inspected the actual Iced windows: pump profile, lighting, capability matrix, verification, recorded motherboard target, offline state and Basic/Advanced Diagnostics. Default layout is 1180 × 880; Basic Diagnostics was also checked at the supported minimum 980 × 720. Smaller windows use vertical scrolling. Demo data and local drafts are labeled. Device application is disabled.
+The running release Iced application was captured and inspected. Diagnostics now contains CPU/GPU radial load, temperature and clock cards with a physical-core toggle. Core tiles show separate SMT bars and shared-L3 groups; rows adapt to the window width. Simulated 8-, 16-, 24- and 64-core layouts were captured; the 8-core layout was checked at the minimum 980 × 720. Longer diagrams scroll vertically. Captures confirmed Vulkan GPU rendering.
 
-Basic Diagnostics uses cached radial bars for CPU, GPU and memory load, with percentage text in the center. Unavailable readings use a neutral track and a dash; valid zero remains 0%. Advanced retains numeric sensor values and rolling history. The images below are native release captures with simulated data.
+The images below use simulated data. Live sensor captures remain private.
 
-![Basic Diagnostics with radial load bars](diagnostics-basic.png)
+![CPU/GPU Diagnostics](diagnostics-basic.png)
 
-![Advanced Diagnostics with individual sensor history](diagnostics-advanced.png)
+![Physical cores, SMT bars and shared L3 groups](diagnostics-cores.png)
 
-The GPU renderer is the default, with software rendering retained as a fallback. Native release captures confirmed GPU rendering. Scrolling and resizing were reported smooth after the earlier GPU/cache/release changes. Geometry is cached; normal operation has no continuous animation loop. Synthetic redraw intervals are not mouse-to-display latency measurements.
+GPU rendering remains the default, software rendering the fallback. Geometry is cached and normal operation has no continuous animation loop. Earlier scrolling and resizing were reported smooth after the GPU/cache/release changes. Synthetic redraw intervals do not measure input-to-display latency.
 
 ## Read-only hardware evidence
 
-The Kraken X3 adapter returned coolant temperature, pump RPM and pump duty on the reference X53. A live service launched by the UI continued returning telemetry after the UI exited.
+The reference Kraken X3 adapter returned coolant temperature, pump RPM and duty without initialization or hardware-setting commands. Its USB identity identifies the X3 family rather than independently distinguishing radiator models.
 
-The read-only adapter did not send initialization, pump, lighting or feature-report commands. The USB identity establishes the X3 family; it does not independently distinguish an X53 from X63/X73.
+AMD ADLX returned GPU temperature/load/power; Windows topology and performance counters returned physical cores, SMT loads and reported clocks. The AMD CPU SDK returned package temperature, active-core peak clock and PPT power after normal SDK installation and service elevation. The ordinary UI remained at normal permissions and displayed live readings through the updated pipe permissions. A handoff request to the elevated service was rejected. These observations establish working read paths, not independent accuracy calibration or broad model coverage.
 
-The AMD ADLX collector returned live GPU temperature, load and board-power readings. Windows CPU load and memory readings were also available. These observations establish functioning read paths on the reference system, not independent accuracy calibration or coverage of every model.
+## Remaining limits
 
-CPU package temperature and power remain unavailable because their native adapter is not implemented. NVIDIA and Intel GPU adapters compile and have model/ABI tests; physical hardware validation is pending. Missing vendor APIs are surfaced through collector status.
+- Live per-core temperature identity mapping is pending. Package temperature is not copied into core tiles.
+- Intel CPU temperature integration and physical NVIDIA/Intel GPU validation remain pending.
+- Multi-group and hybrid CPU layouts are covered by synthetic tests; physical hardware validation and CPU hotplug remain pending.
+- UAC cancellation recovery is covered by UI state logic; broader Windows account/session configurations and clean-machine deployment remain unverified.
+- Pump/RGB writes, measured response, stored profiles, conflict handling and power-cycle recovery remain pending.
+- Motherboard PWM/ARGB integration and final case ARGB wiring remain pending.
+- Privileged Windows Service installation, startup automation and remote access are separate future architecture decisions.
 
-## Still unverified
-
-- Pump command application, measured RPM response, device-stored profiles and power-cycle recovery.
-- Ring/logo USB lighting writes.
-- Motherboard PWM/ARGB detection, control, conflict handling and the final ARGB wiring.
-- CPU package sensor integration and physical NVIDIA/Intel GPU coverage.
-- Hot unplug/replug on physical hardware, other X3 revisions, other boards and other operating systems.
-- Privileged service installation, automatic startup, clean-machine portable deployment and remote access.
-
-Passing the read-only milestones does not verify these control features. Hardware testers should report measured behavior per capability when those adapters become available.
+Hardware support should be assessed per capability as testing becomes available.

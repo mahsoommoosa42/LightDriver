@@ -1,6 +1,6 @@
 use lightdriver_core::{Mode, PROTOCOL_VERSION, Snapshot};
 use lightdriver_devices::{adapter, poll_snapshot};
-use lightdriver_ipc::{Request, bind, read_frame, write_frame};
+use lightdriver_ipc::{Request, RequestAction, bind, read_frame, write_frame};
 use lightdriver_monitoring::Collector;
 use std::{io, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
@@ -16,6 +16,13 @@ async fn main() -> io::Result<()> {
     if args.iter().any(|a| a == "--help") {
         println!(
             "LightDriver local service\n\n  --demo      Simulated data; never opens hardware\n  --once      Read one snapshot, print JSON, exit\n  --snapshot  Read the running service, print JSON, exit\n\nDefault: per-user local IPC service with read-only telemetry. Ctrl+C exits."
+        );
+        return Ok(());
+    }
+    if args.iter().any(|a| a == "--cpu-sensor-handoff") {
+        println!(
+            "{}",
+            lightdriver_ipc::stop_unprivileged_live_service(mode).await?
         );
         return Ok(());
     }
@@ -82,24 +89,43 @@ async fn main() -> io::Result<()> {
 
     // Bound client tasks; a stalled client cannot stop hardware polling.
     let permits = Arc::new(tokio::sync::Semaphore::new(16));
+    let handoff = Arc::new(tokio::sync::Notify::new());
+    let handoff_allowed = lightdriver_ipc::permits_cpu_sensor_handoff(
+        mode,
+        lightdriver_monitoring::is_administrator().unwrap_or(true),
+    );
     loop {
         let stream = tokio::select! {
             accepted = lightdriver_ipc::accept(&listener) => accepted?,
             _ = tokio::signal::ctrl_c() => break,
+            _ = handoff.notified() => break,
         };
         let Ok(permit) = permits.clone().try_acquire_owned() else {
             continue;
         };
         let state = state.clone();
         let diagnostics = diagnostics.clone();
+        let handoff = handoff.clone();
         tokio::spawn(async move {
             let _permit = permit;
             let (mut reader, mut writer) = lightdriver_ipc::split(stream);
             match read_frame::<Request>(&mut reader).await {
-                Ok(request) if request.protocol_version == PROTOCOL_VERSION => {
+                Ok(request)
+                    if request.protocol_version == PROTOCOL_VERSION
+                        && request.action == RequestAction::Snapshot =>
+                {
                     let mut snapshot = state.read().await.clone();
                     snapshot.diagnostics = diagnostics.read().await.clone();
                     let _ = write_frame(&mut writer, &snapshot).await;
+                }
+                Ok(request)
+                    if request.protocol_version == PROTOCOL_VERSION
+                        && request.action == RequestAction::StopUnprivilegedLiveService =>
+                {
+                    let replied = write_frame(&mut writer, &handoff_allowed).await;
+                    if replied.is_ok() && handoff_allowed {
+                        handoff.notify_one();
+                    }
                 }
                 _ => {}
             }
