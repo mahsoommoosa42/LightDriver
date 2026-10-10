@@ -74,3 +74,13 @@ AMD ADLX returned GPU temperature/load/power; Windows topology and performance c
 - Privileged Windows Service installation, startup automation and remote access are separate future architecture decisions.
 
 Hardware support should be assessed per capability as testing becomes available.
+
+## Consolidated motherboard backend — 10 October 2026
+
+The service's device composition and standalone debugger now consume the same GIGABYTE backend. Windows UEFI/PawnIO/inventory access, IT8688 decoding and private file/hash primitives are shared. The UI has no Windows hardware implementation or duplicate header map. Profile tests verify independent RGB/RPM/firmware recognition, BIOS/date mismatch rejection before transport, unknown-board rejection before driver/port access, failed-restoration data rejection and passive construction/capability discovery.
+
+All 86 workspace tests passed; workspace Clippy with warnings denied, formatting and complete optimized release compilation passed. Existing pre-refactor private schema-1 captures imported through the refactored release CLI and compared all 569 bytes identically (zero changed/unknown bytes). This was an offline import/comparison, not a new hardware read.
+
+The refactored release debugger's synthetic native snapshots view was captured and visually inspected; the approved logo, original UI and explicit simulated/locked-write status remain present. PE import inspection found no firmware setter in any executable; the metadata-only probe still has no DeviceIoControl import. Service polling does not invoke the new firmware or RPM interfaces. No live firmware/driver call, UAC launch, fan-setting change, reboot or restoration test was performed during this refactor.
+
+Workbench and the fan debugger have separate CI artifacts. The public debugger package includes its own test guide and full documentation and statically linked backend; no raw private firmware/sensor data or third-party driver/module is included. The next hardware step remains the controlled BIOS-made Manual capture described in firmware-test-guide.md.

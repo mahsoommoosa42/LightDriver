@@ -1,7 +1,6 @@
 //! Independent Rust implementation of PawnIO's documented device IOCTL interface.
 //! Uses an external, hash-pinned official signed LpcIO module. No DLL search path.
-use super::{Reading, Snapshot, decode, supported_board, supported_chip};
-use std::{ffi::c_void, path::PathBuf, ptr, time::Instant};
+use std::{ffi::c_void, path::PathBuf, ptr};
 use windows_sys::Win32::{
     Foundation::{
         CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE, WAIT_ABANDONED, WAIT_OBJECT_0,
@@ -12,7 +11,6 @@ use windows_sys::Win32::{
     Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING},
     System::{
         IO::DeviceIoControl,
-        Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW},
         Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject},
     },
 };
@@ -38,7 +36,7 @@ impl Drop for Handle {
         }
     }
 }
-struct IsaLock(Handle);
+pub(crate) struct IsaLock(Handle);
 impl IsaLock {
     fn acquire() -> Result<Self, String> {
         let name = wide("Global\\Access_ISABUS.HTP.Method");
@@ -70,7 +68,7 @@ impl Drop for IsaLock {
         }
     }
 }
-struct Device(Handle);
+pub(crate) struct Device(Handle);
 impl Device {
     fn open() -> Result<Self, String> {
         let name = wide("\\\\?\\GLOBALROOT\\Device\\PawnIO");
@@ -117,7 +115,12 @@ impl Device {
         }
         Ok(written as usize)
     }
-    fn execute(&self, name: &str, input: &[u64], count: usize) -> Result<Vec<u64>, String> {
+    pub(crate) fn execute(
+        &self,
+        name: &str,
+        input: &[u64],
+        count: usize,
+    ) -> Result<Vec<u64>, String> {
         if name.len() >= 32 || !name.is_ascii() {
             return Err("Invalid internal module function.".into());
         }
@@ -138,58 +141,32 @@ impl Device {
             .map(|s| u64::from_le_bytes(*s))
             .collect())
     }
-    fn in_port(&self, port: u16) -> Result<u8, String> {
+    pub(crate) fn in_port(&self, port: u16) -> Result<u8, String> {
         let value = self.execute("ioctl_pio_inb", &[u64::from(port)], 1)?[0];
         u8::try_from(value).map_err(|_| "Invalid port byte from module.".into())
     }
-    fn out_port(&self, port: u16, value: u8) -> Result<(), String> {
+    pub(crate) fn out_port(&self, port: u16, value: u8) -> Result<(), String> {
         self.execute("ioctl_pio_outb", &[u64::from(port), u64::from(value)], 0)?;
         Ok(())
     }
-    fn sio_read(&self, register: u8) -> Result<u8, String> {
+    pub(crate) fn sio_read(&self, register: u8) -> Result<u8, String> {
         let v = self.execute("ioctl_superio_inb", &[u64::from(register)], 1)?[0];
         u8::try_from(v).map_err(|_| "Invalid Super I/O byte from module.".into())
     }
-    fn select_ldn(&self, ldn: u8) -> Result<(), String> {
+    pub(crate) fn select_ldn(&self, ldn: u8) -> Result<(), String> {
         // Register 7 selects a logical device; it does not program fan settings.
         self.execute("ioctl_superio_outb", &[7, u64::from(ldn)], 0)?;
         Ok(())
     }
-    fn exit_config(&self) -> Result<(), String> {
+    pub(crate) fn exit_config(&self) -> Result<(), String> {
         self.execute("ioctl_superio_outb", &[2, 2], 0)?;
         Ok(())
     }
-    fn ec_read(&self, base: u16, register: u8) -> Result<u8, String> {
+    pub(crate) fn ec_read(&self, base: u16, register: u8) -> Result<u8, String> {
         // Only the address/selector port is written. The EC data port is read-only here.
         self.out_port(base + 5, register)?;
         self.in_port(base + 6)
     }
-}
-fn registry(name: &str) -> Result<String, String> {
-    let key = wide("HARDWARE\\DESCRIPTION\\System\\BIOS");
-    let name = wide(name);
-    let mut buf = [0u16; 256];
-    let mut size = std::mem::size_of_val(&buf) as u32;
-    // SAFETY: fixed buffer, matching byte count, read-only REG_SZ request.
-    let status = unsafe {
-        RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            key.as_ptr(),
-            name.as_ptr(),
-            RRF_RT_REG_SZ,
-            ptr::null_mut(),
-            buf.as_mut_ptr().cast(),
-            &mut size,
-        )
-    };
-    if status != 0 {
-        return Err(format!("Motherboard inventory unavailable: Win32 {status}"));
-    }
-    if size as usize > std::mem::size_of_val(&buf) {
-        return Err("Invalid motherboard inventory length.".into());
-    }
-    let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-    String::from_utf16(&buf[..end]).map_err(|_| "Invalid motherboard inventory text.".into())
 }
 fn module_path() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
@@ -238,121 +215,13 @@ fn verify_module(bytes: &mut [u8]) -> Result<(), String> {
     }
     Ok(())
 }
-fn read_slot(device: &Device, slot: u64) -> Result<Option<Snapshot>, String> {
-    device.execute("ioctl_select_slot", &[slot], 0)?;
-    let port = if slot == 0 { 0x2e } else { 0x4e };
-    let enter = [0x87, 0x01, 0x55, if slot == 0 { 0x55 } else { 0xaa }];
-    for byte in enter {
-        if let Err(error) = device.out_port(port, byte) {
-            let cleanup = device.exit_config();
-            return Err(format!("{error}; configuration exit: {cleanup:?}"));
-        }
-    }
-    let mut original_ldn = None;
-    let result = (|| {
-        original_ldn = Some(device.sio_read(7)?);
-        let id = u16::from_be_bytes([device.sio_read(0x20)?, device.sio_read(0x21)?]);
-        if id != 0x8688 {
-            return Ok(None);
-        }
-        let revision = device.sio_read(0x22)? & 0x0f;
-        if !supported_chip(id, revision) {
-            return Err(format!(
-                "IT8688 revision {revision} is unsupported by this monitor."
-            ));
-        }
-        device.select_ldn(4)?;
-        if device.sio_read(0x30)? & 1 == 0 {
-            return Err("IT8688 monitor is disabled; left unchanged.".into());
-        }
-        let base = u16::from_be_bytes([device.sio_read(0x60)?, device.sio_read(0x61)?]) & !7;
-        if !(0x100..=0xfff0).contains(&base) || (0xcf8..=0xcff).contains(&base) {
-            return Err("Invalid IT8688 I/O base.".into());
-        }
-        // Official LpcIO validates BARs twice before allowing their I/O range.
-        // It enumerates LDN selectors; the original selector is restored below.
-        device.execute("ioctl_find_bars", &[], 0)?;
-        device.select_ldn(4)?;
-        // Do not alter bank selector just to obtain a reading.
-        let bank = device.ec_read(base, 6)?;
-        if bank >> 5 != 0 {
-            return Err("IT8688 bank is busy/nonzero; no bank change performed.".into());
-        }
-        if device.ec_read(base, 0x58)? != 0x90 {
-            return Err("IT8688 monitor identity check failed.".into());
-        }
-        let config = device.ec_read(base, 0)?;
-        if config & 0x80 != 0 || config & 1 == 0 {
-            return Err("IT8688 monitoring is inactive; left unchanged.".into());
-        }
-        let main = device.ec_read(base, 0x13)?;
-        let mode = device.ec_read(base, 0x0c)?;
-        let low = [0x0d, 0x0e, 0x0f, 0x80, 0x82];
-        let high = [0x18, 0x19, 0x1a, 0x81, 0x83];
-        let headers = ["CPU_FAN", "SYS_FAN1", "SYS_FAN2", "PCH_FAN", "CPU_OPT"];
-        let mut readings = Vec::new();
-        for channel in 0..5 {
-            let mut stable = None;
-            // Reject an observed high-byte rollover rather than producing a spurious RPM.
-            for _ in 0..3 {
-                let h1 = device.ec_read(base, high[channel])?;
-                let l = device.ec_read(base, low[channel])?;
-                let h2 = device.ec_read(base, high[channel])?;
-                if h1 == h2 {
-                    stable = Some(u16::from_le_bytes([l, h2]));
-                    break;
-                }
-            }
-            let (rpm, detail) = stable
-                .map(|v| decode(channel, main, mode, v))
-                .unwrap_or((None, "Tachometer changed during sample; retry next poll"));
-            readings.push(Reading {
-                header: headers[channel],
-                channel: channel as u8 + 1,
-                rpm,
-                detail,
-            });
-        }
-        if device.ec_read(base, 6)? != bank {
-            return Err("IT8688 bank changed during sample; readings discarded.".into());
-        }
-        Ok(Some(Snapshot {
-            readings,
-            source: format!(
-                "X570 AORUS ELITE WIFI · PawnIO · IT8688 rev {revision} · I/O 0x{base:04X} · {port:#04X} · board header mapping pending physical confirmation"
-            ),
-            sampled_at: Instant::now(),
-        }))
-    })();
-    let restored = original_ldn.map(|ldn| device.select_ldn(ldn)).transpose();
-    let exited = device.exit_config();
-    if let Err(error) = restored {
-        return Err(format!("Super I/O selector restoration failed: {error}"));
-    }
-    if let Err(error) = exited {
-        return Err(format!("Super I/O configuration exit failed: {error}"));
-    }
-    result
-}
-pub fn sample() -> Result<Snapshot, String> {
-    let manufacturer = registry("BaseBoardManufacturer")?;
-    let product = registry("BaseBoardProduct")?;
-    if !supported_board(&manufacturer, &product) {
-        return Err(format!(
-            "No recognized motherboard RPM adapter for {product}. No ports were accessed."
-        ));
-    }
+pub(crate) fn open_lpcio() -> Result<(Device, IsaLock), String> {
     let device = Device::open()?;
     let mut blob = std::fs::read(module_path()?).map_err(|e| e.to_string())?;
     verify_module(&mut blob)?;
-    device.ioctl(LOAD, &blob, &mut [])?; // Official driver validates the signed module.
-    let _lock = IsaLock::acquire()?;
-    for slot in 0..2 {
-        if let Some(snapshot) = read_slot(&device, slot)? {
-            return Ok(snapshot);
-        }
-    }
-    Err("Recognized motherboard, but no supported IT8688 chip was found.".into())
+    device.ioctl(LOAD, &blob, &mut [])?; // The driver verifies the module signature.
+    let lock = IsaLock::acquire()?;
+    Ok((device, lock))
 }
 
 #[cfg(test)]

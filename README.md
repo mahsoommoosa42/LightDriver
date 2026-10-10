@@ -87,12 +87,14 @@ Iced desktop ── bounded, versioned local IPC ── Rust service
 | --- | --- |
 | `lightdriver-core` | Device/capability models, telemetry freshness, curve/draft validation |
 | `lightdriver-ipc` | Versioned length-prefixed JSON over local sockets; Windows named pipes; bounded frames/timeouts |
-| `lightdriver-devices` | Windows Kraken / ITE HID adapters and isolated demo adapter |
+| `lightdriver-devices` | Kraken adapter, isolated demo and service device composition |
+| `lightdriver-hardware` | Shared inventory, read-only UEFI/PawnIO transports, IT8688 monitor and private backup primitives |
+| `lightdriver-gigabyte` | Consolidated RGB, fan mappings, reviewed board/BIOS profiles and firmware research backend |
 | `lightdriver-monitoring` | Read-only CPU topology/load/clocks, optional AMD CPU SDK and AMD/NVIDIA/Intel GPU collectors |
 | `lightdriver-service` | Single owner per user/mode, serialized polling/commands and bounded receipt cache |
 | `lightdriver-desktop` | Native Workbench, explicit Apply, profiles, wiring and evidence export |
 | `lightdriver-branding` | Shared approved logo, cached image and native icons |
-| `lightdriver-firmware-probe` | Separate opt-in getter and partial reference-layout decoder; no firmware writes |
+| `lightdriver-firmware-probe` | Metadata-only CLI/compatibility facade over the GIGABYTE firmware backend |
 | `lightdriver-fan-debug` | Standalone native firmware fan lab: initial recovery backup, factory/initial restore previews, byte comparisons and live RPM; writes locked |
 
 All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The local API contains snapshots, typed device commands, separate bounded log batches and the explicit CPU-sensor handoff. The service validates mode, device, capability, payload and deadline. It serializes commands with polling, retains duplicate receipts for the full request deadline, and never retries unknown hardware outcomes.
@@ -174,3 +176,7 @@ After updating from an older build, restart the local service: protocol version 
 [FanDebug.cmd](FanDebug.cmd) opens the separate lab. It reads once on launch and privately saves/verifies the first successful live snapshot for that session. Refreshes do not replace it. The reviewed F41c case-fan Normal preset is bundled separately, with Initial and Factory restore previews, complete byte comparison and optional PawnIO RPM monitoring. Firmware writes/restoration stay locked pending codec, policy and physical validation. See [lab usage](crates/fan-debug/README.md), [firmware research](docs/firmware-fan-persistence.md) and [FanControl study](docs/fancontrol-study.md).
 
 Both native UIs now use the approved rainbow-arches logo in their headers and Windows icons. Assets are embedded; portable builds need no separate logo file.
+
+## Motherboard modules and standalone debugger
+
+The service and separate fan debugger now consume the same `lightdriver-gigabyte::GigabyteBackend`. Vendor profiles/commands/formats live in that crate; reusable Windows UEFI/PawnIO access and backup primitives live in `lightdriver-hardware`. Core contracts remain vendor-neutral. See [adapter architecture and contribution gates](docs/motherboard-adapters.md). The debugger retains its own executable and archive. Firmware writes/restoration remain unimplemented.

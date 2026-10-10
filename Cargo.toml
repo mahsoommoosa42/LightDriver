@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/branding", "crates/core", "crates/ipc", "crates/devices", "crates/service", "crates/desktop", "crates/monitoring", "crates/firmware-probe", "crates/fan-debug"]
+members = ["crates/branding", "crates/core", "crates/ipc", "crates/devices", "crates/service", "crates/desktop", "crates/monitoring", "crates/firmware-probe", "crates/fan-debug", "crates/hardware", "crates/gigabyte"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +12,8 @@ publish = false
 lightdriver-branding = { path = "crates/branding" }
 winresource = "0.1.31"
 lightdriver-core = { path = "crates/core" }
+lightdriver-hardware = { path = "crates/hardware" }
+lightdriver-gigabyte = { path = "crates/gigabyte" }
 lightdriver-ipc = { path = "crates/ipc" }
 lightdriver-devices = { path = "crates/devices" }
 lightdriver-monitoring = { path = "crates/monitoring" }

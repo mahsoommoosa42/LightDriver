@@ -1,8 +1,6 @@
 //! Explicit private capture and offline comparison. No firmware setter or driver call.
-use lightdriver_firmware_probe::{
-    inspect_snapshot,
-    snapshot::{Snapshot, write_new},
-};
+use lightdriver_core::MotherboardBackend;
+use lightdriver_gigabyte::firmware::snapshot::{Snapshot, write_new};
 use std::{ffi::OsString, path::PathBuf};
 enum Operation {
     Capture {
@@ -75,7 +73,7 @@ pub fn run(args: &[OsString]) -> Result<i32, String> {
             let snapshot = if demo {
                 Snapshot::synthetic()
             } else {
-                let read = inspect_snapshot();
+                let read = lightdriver_gigabyte::GigabyteBackend::default().inspect_firmware();
                 read.snapshot.ok_or_else(|| {
                     let errors = [
                         &read.report.firmware,

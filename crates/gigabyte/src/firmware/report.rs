@@ -1,11 +1,8 @@
 use serde::Serialize;
 
-pub const VARIABLE_NAME: &str = "GcSensorVarName";
-pub const VARIABLE_GUID: &str = "{5489A3E4-C745-11EA-87D0-0242AC130003}";
-#[cfg(any(windows, test))]
-pub const REFERENCE_LENGTH: usize = 569;
-#[cfg(any(windows, test))]
-const REFERENCE_BOARD_ID: &[u8; 8] = b"8AMTS010";
+use crate::profiles::{REFERENCE_BOARD_ID, REFERENCE_LENGTH};
+pub use crate::profiles::{VARIABLE_GUID, VARIABLE_NAME};
+pub use lightdriver_hardware::uefi::{AccessError as ProbeError, AccessStep as StepStatus};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProbeReport {
@@ -61,37 +58,6 @@ impl ProbeReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct StepStatus {
-    pub status: &'static str,
-    pub error: Option<ProbeError>,
-}
-impl StepStatus {
-    pub fn new(status: &'static str) -> Self {
-        Self {
-            status,
-            error: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ProbeError {
-    pub operation: &'static str,
-    pub win32_code: u32,
-    pub message: String,
-}
-impl ProbeError {
-    #[cfg(windows)]
-    pub fn windows(operation: &'static str, code: u32) -> Self {
-        Self {
-            operation,
-            win32_code: code,
-            message: std::io::Error::from_raw_os_error(code as i32).to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
 pub struct VariableRead {
     pub status: &'static str,
     pub error: Option<ProbeError>,
@@ -118,7 +84,6 @@ pub struct HeaderMetadata {
     pub reference_header_matches: bool,
 }
 
-#[cfg(any(windows, test))]
 impl VariableMetadata {
     pub fn decode(data: &[u8], attributes: u32) -> Self {
         let board_image_id = data

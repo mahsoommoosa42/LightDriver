@@ -1405,8 +1405,8 @@ version = "0.1.0"
 dependencies = [
  "hidapi",
  "lightdriver-core",
- "sysinfo",
- "windows-sys 0.61.2",
+ "lightdriver-gigabyte",
+ "lightdriver-hardware",
 ]
 
 [[package]]
@@ -1415,11 +1415,11 @@ version = "0.1.0"
 dependencies = [
  "iced",
  "lightdriver-branding",
- "lightdriver-firmware-probe",
+ "lightdriver-core",
+ "lightdriver-gigabyte",
  "png",
  "serde_json",
  "tokio",
- "windows-sys 0.61.2",
  "winresource",
 ]
 
@@ -1427,9 +1427,29 @@ dependencies = [
 name = "lightdriver-firmware-probe"
 version = "0.1.0"
 dependencies = [
+ "lightdriver-gigabyte",
+ "serde_json",
+]
+
+[[package]]
+name = "lightdriver-gigabyte"
+version = "0.1.0"
+dependencies = [
+ "hidapi",
+ "lightdriver-core",
+ "lightdriver-hardware",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "lightdriver-hardware"
+version = "0.1.0"
+dependencies = [
+ "lightdriver-core",
+ "serde",
  "sha2",
+ "sysinfo",
  "windows-sys 0.61.2",
 ]
 

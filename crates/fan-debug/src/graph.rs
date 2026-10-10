@@ -3,7 +3,7 @@ use iced::{
     Color, Point, Rectangle, Renderer, Size, Theme, mouse,
     widget::{Canvas, canvas},
 };
-use lightdriver_firmware_probe::reference_layout::{
+use lightdriver_gigabyte::firmware::reference_layout::{
     GraphPoint, HeaderSettings, LevelPreview, manual_graph,
 };
 const MINT: Color = Color::from_rgb8(101, 223, 204);

@@ -2,8 +2,8 @@
 //! Standalone firmware preview and independent read-only tachometer monitor.
 mod firmware_check;
 mod graph;
-mod recovery;
-mod rpm;
+use lightdriver_core::MotherboardBackend;
+use lightdriver_gigabyte::{firmware::recovery, rpm};
 mod rpm_check;
 use iced::{
     Border, Color, Element, Font, Length, Subscription, Task, Theme,
@@ -12,10 +12,13 @@ use iced::{
     },
     window,
 };
-use lightdriver_firmware_probe::{
+use lightdriver_gigabyte::firmware::{
     ProbeReport, SnapshotInspection,
     reference_layout::{Header, HeaderSettings, LevelPreview},
-    snapshot::{Comparison, OfflineCandidate, Origin, RestoreCandidate, RestoreTarget, Snapshot},
+    snapshot::{
+        Comparison, GigabyteIdentity, OfflineCandidate, Origin, RestoreCandidate, RestoreTarget,
+        Snapshot,
+    },
 };
 use std::{collections::VecDeque, path::PathBuf, time::Duration};
 
@@ -431,9 +434,9 @@ impl FanDebug {
                 } else {
                     return Task::perform(
                         async {
-                            tokio::task::spawn_blocking(
-                                lightdriver_firmware_probe::inspect_snapshot,
-                            )
+                            tokio::task::spawn_blocking(|| {
+                                lightdriver_gigabyte::GigabyteBackend::default().inspect_firmware()
+                            })
                             .await
                             .map_err(|e| e.to_string())
                         },
@@ -791,7 +794,7 @@ impl FanDebug {
                     snapshot.identity.product,
                     snapshot.identity.bios_version,
                     snapshot.identity.bios_date,
-                    lightdriver_firmware_probe::reference_layout::PAYLOAD_LENGTH,
+                    lightdriver_gigabyte::firmware::reference_layout::PAYLOAD_LENGTH,
                     snapshot.fingerprint()
                 ))
                 .size(11)
@@ -927,7 +930,7 @@ impl FanDebug {
             }),
             Some(RestoreTarget::Factory) => self
                 .selected
-                .and_then(lightdriver_firmware_probe::reference_layout::factory_normal_graph),
+                .and_then(lightdriver_gigabyte::firmware::reference_layout::factory_normal_graph),
             None => self.current(),
         };
         let graph_settings = observed_graph.map(|settings| {
@@ -937,8 +940,10 @@ impl FanDebug {
                     .as_ref()
                     .is_some_and(|s| s.identity.reference_match())
             {
-                lightdriver_firmware_probe::reference_layout::factory_normal_graph(settings.header)
-                    .unwrap_or(settings)
+                lightdriver_gigabyte::firmware::reference_layout::factory_normal_graph(
+                    settings.header,
+                )
+                .unwrap_or(settings)
             } else {
                 settings
             }
@@ -1027,7 +1032,7 @@ impl FanDebug {
                 proposal = proposal.push(
                     text(format!(
                         "{}{detail}",
-                        lightdriver_firmware_probe::snapshot::field_at(change.offset)
+                        lightdriver_gigabyte::firmware::snapshot::field_at(change.offset)
                     ))
                     .size(12)
                     .color(MUTED),
@@ -1045,7 +1050,7 @@ impl FanDebug {
                 proposal = proposal.push(
                     text(format!(
                         "{}{}",
-                        lightdriver_firmware_probe::snapshot::field_at(change.offset),
+                        lightdriver_gigabyte::firmware::snapshot::field_at(change.offset),
                         if self.verbose {
                             format!(
                                 " · 0x{:03X}: 0x{:02X} → 0x{:02X}",
@@ -1321,7 +1326,7 @@ mod tests {
         let mut inspection = FanDebug::simulated();
         // This is synthetic: no privilege or firmware API is invoked.
         inspection.report.privilege_restoration.error =
-            Some(lightdriver_firmware_probe::ProbeError {
+            Some(lightdriver_gigabyte::firmware::ProbeError {
                 operation: "synthetic restore",
                 win32_code: 5,
                 message: "test failure".into(),

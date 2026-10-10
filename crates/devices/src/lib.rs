@@ -1,7 +1,5 @@
 //! Service-owned adapters. Hardware writes require an explicit per-device control session.
 mod commands;
-mod gigabyte;
-mod motherboard;
 use lightdriver_core::{
     CommandReceipt, CommandState, ControlAction, ControlRequest, ControlState, LogStore, Preset,
     PumpCurve,
@@ -10,15 +8,10 @@ use lightdriver_core::{
     Device, DeviceStatus, HISTORY_LIMIT, Mode, Snapshot, Telemetry, inventory_target,
     kraken_target, now_ms,
 };
-pub use motherboard::discover_board;
+use lightdriver_gigabyte::{GigabyteBackend, rgb as gigabyte};
+pub use lightdriver_hardware::inventory::discover_board;
 
-pub trait DeviceAdapter: Send {
-    fn poll(&mut self) -> Vec<Device>;
-    fn set_logger(&mut self, _logger: LogStore) {}
-    fn control(&mut self, request: &ControlRequest) -> CommandReceipt {
-        CommandReceipt::rejected(request, "This adapter does not expose device control.")
-    }
-}
+pub use lightdriver_core::DeviceAdapter;
 
 #[derive(Default)]
 pub struct DemoAdapter {
@@ -195,15 +188,6 @@ fn kraken_id(info: &hidapi::DeviceInfo) -> String {
     info.path().hash(&mut h);
     format!("kraken-x3-{:016x}", h.finish())
 }
-#[cfg(windows)]
-fn competing_controller() -> Option<String> {
-    let mut system = sysinfo::System::new();
-    system.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    system.processes().values().find_map(|p| {
-        let name=p.name().to_string_lossy().to_ascii_lowercase();
-        ["nzxt cam.exe", "nzxt cam helper.exe", "cam.exe", "liquidctl.exe", "openrgb.exe", "signalrgb.exe", "rgbfusion.exe", "rgbfusion2.exe", "gcc.exe"].contains(&name.as_str()).then_some("Another cooling/lighting controller is running. Close it before enabling or applying device control.".into())
-    })
-}
 
 #[cfg(windows)]
 impl DeviceAdapter for KrakenAdapter {
@@ -223,7 +207,7 @@ impl DeviceAdapter for KrakenAdapter {
                 self.owned.remove(&request.device_id);
                 return Ok((CommandState::Released, "Control released. Last device curve/lighting remain; previous controller settings cannot be read back.".into()));
             }
-            if let Some(conflict) = competing_controller() {
+            if let Some(conflict) = lightdriver_hardware::conflicts::competing_controller() {
                 self.owned.remove(&request.device_id);
                 return Err(conflict);
             }
@@ -463,7 +447,7 @@ impl DeviceAdapter for KrakenAdapter {
 #[derive(Default)]
 struct LiveAdapters {
     kraken: KrakenAdapter,
-    gigabyte: gigabyte::GigabyteAdapter,
+    gigabyte: GigabyteBackend,
 }
 #[cfg(windows)]
 impl DeviceAdapter for LiveAdapters {

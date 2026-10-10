@@ -124,3 +124,11 @@ See [firmware findings](../../docs/firmware-fan-persistence.md) and [FanControl 
 - [PawnIO user-mode interface, pinned source](https://github.com/namazso/PawnIO/blob/9d52965895588b0ffa3703b72eec75ba19f4ccc0/PawnIO/include/pawnio_um.h): independently implemented Rust transport.
 - [Official LpcIO module, reviewed source](https://github.com/namazso/PawnIO.Modules/blob/0.2.11/LpcIO.p): module entry points and ISA locking.
 - [it87 driver, pinned source](https://github.com/frankcrawford/it87/blob/bd7a566c8a60fe0308d67e26761e16260368191a/it87.c): identities, register facts and 675000/count conversion; no Linux initialization writes were implemented.
+
+## Shared backend, separate application
+
+This debugger remains its own native executable and downloadable archive. It consumes the same GIGABYTE backend as the local service. Firmware layouts, board/header profiles, snapshots, restore previews and recovery live in `lightdriver-gigabyte`; Windows UEFI/PawnIO access lives in `lightdriver-hardware`. This UI has no separate hardware implementation. Existing schema-1 private backups remain importable.
+
+Live firmware inspection now rejects an unreviewed board/BIOS profile before UEFI or privilege access. RGB, RPM and firmware support remain independent, and firmware saving/immediate application/reboot retention remain unavailable. Cancelling UAC does not unlock writes: close/reopen the debugger as administrator through normal Windows UAC to retry reads when ready. The refactor itself does not request elevation or start hardware monitoring. See [the architecture](../../docs/motherboard-adapters.md).
+
+The next user experiment is documented in [the BIOS capture test guide](../../docs/firmware-test-guide.md). It uses a BIOS-made curve and private before/after captures; the debugger remains read-only.

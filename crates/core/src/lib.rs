@@ -1,4 +1,8 @@
 //! Models shared by the service, device adapters, and native application.
+mod motherboard;
+pub use motherboard::*;
+mod adapters;
+pub use adapters::*;
 mod control;
 pub use control::*;
 mod diagnostics;

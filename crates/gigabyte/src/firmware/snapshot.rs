@@ -1,50 +1,20 @@
 //! Private, local firmware research snapshots and offline comparisons.
 //! A valid snapshot is evidence of a read, never authorization for a write.
-use crate::{
+use super::{
     reference_layout::{self, FieldChange, Header, HeaderSettings, LevelPreview},
     report::{VARIABLE_GUID, VARIABLE_NAME},
 };
+pub use lightdriver_hardware::backup::{sha256, write_new};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::{
-    fs::OpenOptions,
-    io::{Read, Write},
+    io::Read,
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 const MAX_FILE_BYTES: u64 = 16_384;
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct PlatformIdentity {
-    pub manufacturer: String,
-    pub product: String,
-    pub bios_version: String,
-    pub bios_date: String,
-}
-impl PlatformIdentity {
-    pub fn reference_match(&self) -> bool {
-        self.manufacturer
-            .trim()
-            .eq_ignore_ascii_case("Gigabyte Technology Co., Ltd.")
-            && self
-                .product
-                .trim()
-                .eq_ignore_ascii_case("X570 AORUS ELITE WIFI")
-            && self.bios_version.trim() == "F41c"
-            && self.bios_date.trim() == "08/18/2026"
-    }
-    fn valid(&self) -> bool {
-        [
-            &self.manufacturer,
-            &self.product,
-            &self.bios_version,
-            &self.bios_date,
-        ]
-        .iter()
-        .all(|s| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control))
-    }
-}
+pub use crate::profiles::GigabyteIdentity;
+pub use lightdriver_core::MotherboardIdentity as PlatformIdentity;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Origin {
@@ -141,9 +111,6 @@ impl OfflineCandidate {
     }
 }
 
-pub fn sha256(data: &[u8]) -> String {
-    format!("{:X}", Sha256::digest(data))
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestoreTarget {
     Initial,
@@ -452,18 +419,6 @@ pub fn field_at(offset: usize) -> String {
     }
     "Unidentified firmware field".into()
 }
-pub fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| format!("Cannot create a new file: {e}"))?;
-    file.write_all(bytes)
-        .and_then(|_| file.write_all(b"\n"))
-        .and_then(|_| file.sync_all())
-        .map_err(|e| format!("File save failed; partial file may remain: {e}"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

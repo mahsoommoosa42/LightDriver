@@ -1,5 +1,5 @@
 //! A new immutable initial snapshot for each app session. No firmware writes.
-use lightdriver_firmware_probe::snapshot::{Origin, Snapshot, sha256};
+use super::snapshot::{Origin, Snapshot, sha256};
 use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Recovery {

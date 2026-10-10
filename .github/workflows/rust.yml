@@ -31,12 +31,24 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist/LightDriver/docs -Force
-          New-Item -ItemType Directory -Path dist/LightDriver/crates/fan-debug -Force
-          Copy-Item target/release/lightdriver-desktop.exe,target/release/lightdriver-service.exe,target/release/lightdriver-fan-debug.exe,target/release/lightdriver-firmware-probe.exe,LightDriver.cmd,FanDebug.cmd,README.md dist/LightDriver/
-          Copy-Item crates/fan-debug/README.md dist/LightDriver/crates/fan-debug/
+          Copy-Item target/release/lightdriver-desktop.exe,target/release/lightdriver-service.exe,LightDriver.cmd,README.md dist/LightDriver/
           Copy-Item docs/* dist/LightDriver/docs/
+      - name: Package standalone fan debugger
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist/FanDebug/docs -Force
+          New-Item -ItemType Directory -Path dist/FanDebug/crates/fan-debug -Force
+          Copy-Item target/release/lightdriver-fan-debug.exe,target/release/lightdriver-firmware-probe.exe,FanDebug.cmd dist/FanDebug/
+          Copy-Item crates/fan-debug/README.md dist/FanDebug/crates/fan-debug/
+          Copy-Item crates/fan-debug/PORTABLE-README.md dist/FanDebug/README.md
+          Copy-Item docs/firmware-fan-persistence.md,docs/fancontrol-study.md,docs/motherboard-adapters.md,docs/firmware-test-guide.md,docs/firmware-fan-lab.png dist/FanDebug/docs/
       - uses: actions/upload-artifact@v7
         with:
           name: LightDriver-Windows-x64
           path: dist/LightDriver/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v7
+        with:
+          name: LightDriver-FanDebug-Windows-x64
+          path: dist/FanDebug/
           if-no-files-found: error

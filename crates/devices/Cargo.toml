@@ -7,10 +7,8 @@ publish.workspace = true
 
 [dependencies]
 lightdriver-core.workspace = true
+lightdriver-hardware.workspace = true
+lightdriver-gigabyte.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 hidapi = { version = "2.6.3", default-features = false, features = ["windows-native"] }
-
-
-sysinfo = { version = "0.33.1", default-features = false, features = ["system"] }
-windows-sys = { version = "0.61.2", features = ["Win32_System_Registry"] }

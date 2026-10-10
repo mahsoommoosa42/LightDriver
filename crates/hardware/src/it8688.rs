@@ -1,48 +1,33 @@
-//! Independent tachometer monitor. Never takes over PWM or writes a fan setting.
+//! Reusable IT8688 tachometer monitor; header mapping is supplied by a vendor profile. Never takes over PWM or writes a fan setting.
 use std::time::Instant;
 #[cfg(windows)]
 mod windows;
 
-#[derive(Debug, Clone)]
-pub struct Reading {
-    pub header: &'static str,
-    pub channel: u8,
-    pub rpm: Option<u32>,
-    pub detail: &'static str,
-}
-#[derive(Debug, Clone)]
-pub struct Snapshot {
-    pub readings: Vec<Reading>,
-    pub source: String,
-    pub sampled_at: Instant,
-}
-pub fn sample() -> Result<Snapshot, String> {
+pub use lightdriver_core::{FanRpmReading as Reading, FanRpmSnapshot as Snapshot};
+pub fn sample(headers: [&'static str; 5]) -> Result<Snapshot, String> {
     #[cfg(windows)]
     {
-        windows::sample()
+        windows::sample(headers)
     }
     #[cfg(not(windows))]
     {
+        let _ = headers;
         Err("Motherboard RPM currently requires Windows and signed PawnIO.".into())
     }
 }
-pub fn simulated() -> Snapshot {
+pub fn simulated(headers: [&'static str; 5]) -> Snapshot {
     Snapshot {
-        readings: [
-            ("CPU_FAN", 1, 1080),
-            ("SYS_FAN1", 2, 920),
-            ("SYS_FAN2", 3, 875),
-            ("PCH_FAN", 4, 1600),
-            ("CPU_OPT", 5, 1020),
-        ]
-        .into_iter()
-        .map(|(header, channel, rpm)| Reading {
-            header,
-            channel,
-            rpm: Some(rpm),
-            detail: "SIMULATED",
-        })
-        .collect(),
+        readings: headers
+            .into_iter()
+            .zip([1080, 920, 875, 1600, 1020])
+            .enumerate()
+            .map(|(channel, (header, rpm))| Reading {
+                header,
+                channel: channel as u8 + 1,
+                rpm: Some(rpm),
+                detail: "SIMULATED",
+            })
+            .collect(),
         source: "SIMULATED · no driver or firmware access".into(),
         sampled_at: Instant::now(),
     }
@@ -71,11 +56,6 @@ fn decode(channel: usize, main: u8, mode: u8, count: u16) -> (Option<u32>, &'sta
 fn supported_chip(id: u16, revision: u8) -> bool {
     id == 0x8688 && matches!(revision, 1 | 2)
 }
-#[cfg(any(windows, test))]
-fn supported_board(manufacturer: &str, product: &str) -> bool {
-    manufacturer.to_ascii_lowercase().contains("gigabyte")
-        && product.trim().eq_ignore_ascii_case("X570 AORUS ELITE WIFI")
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -99,15 +79,5 @@ mod tests {
         }
         assert!(!supported_chip(0x8689, 1));
         assert!(!supported_chip(0xffff, 1));
-    }
-    #[test]
-    fn similar_board_names_do_not_inherit_header_mapping() {
-        assert!(supported_board(
-            "Gigabyte Technology Co., Ltd.",
-            "X570 AORUS ELITE WIFI"
-        ));
-        assert!(!supported_board("Gigabyte", "X570 AORUS ELITE"));
-        assert!(!supported_board("ASUS", "X570 AORUS ELITE WIFI"));
-        assert!(!supported_board("Gigabyte", "X570 AORUS ELITE WIFI II"));
     }
 }

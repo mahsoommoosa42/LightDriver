@@ -1,8 +1,9 @@
 //! Partial read-only observations for the analyzed F41c image.
 //! These fields cannot establish a complete curve codec or writable support.
 
-pub const PAYLOAD_LENGTH: usize = 569;
-pub const BOARD_IMAGE_ID: &[u8; 8] = b"8AMTS010";
+pub use crate::profiles::{
+    REFERENCE_BOARD_ID as BOARD_IMAGE_ID, REFERENCE_LENGTH as PAYLOAD_LENGTH,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Header {

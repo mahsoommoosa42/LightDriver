@@ -1,6 +1,4 @@
-use crate::report::{
-    ProbeError, ProbeReport, StepStatus, VARIABLE_GUID, VARIABLE_NAME, VariableMetadata,
-};
+use super::{AccessError as ProbeError, AccessStep, FirmwareVariable, RawVariable, ReadOutcome};
 use std::{mem, ptr};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, ERROR_NOT_ALL_ASSIGNED, GetLastError, HANDLE, LUID, SetLastError},
@@ -133,100 +131,60 @@ impl Drop for PrivilegeGuard {
     }
 }
 
-pub fn inspect_fields() -> crate::Inspection {
-    let inspection = inspect_snapshot();
-    crate::Inspection {
-        report: inspection.report,
-        fields: inspection.snapshot.as_ref().map(|s| s.fields()),
-    }
-}
-
-fn registry(name: &str) -> Result<String, String> {
-    use windows_sys::Win32::System::Registry::{HKEY_LOCAL_MACHINE, RRF_RT_REG_SZ, RegGetValueW};
-    let key = wide("HARDWARE\\DESCRIPTION\\System\\BIOS");
-    let name = wide(name);
-    let mut buffer = [0u16; 256];
-    let mut size = std::mem::size_of_val(&buffer) as u32;
-    // SAFETY: fixed inventory key, bounded writable UTF-16 buffer, REG_SZ only.
-    let code = unsafe {
-        RegGetValueW(
-            HKEY_LOCAL_MACHINE,
-            key.as_ptr(),
-            name.as_ptr(),
-            RRF_RT_REG_SZ,
-            ptr::null_mut(),
-            buffer.as_mut_ptr().cast(),
-            &mut size,
-        )
-    };
-    if code != 0
-        || size == 0
-        || size as usize > std::mem::size_of_val(&buffer)
-        || !size.is_multiple_of(2)
-    {
-        return Err(format!("Board/BIOS inventory unavailable: Win32 {code}"));
-    }
-    let count = size as usize / 2;
-    let end = buffer[..count]
-        .iter()
-        .position(|&c| c == 0)
-        .ok_or("Unterminated inventory value")?;
-    String::from_utf16(&buffer[..end]).map_err(|_| "Invalid inventory value".into())
-}
-fn identity() -> Result<crate::snapshot::PlatformIdentity, String> {
-    Ok(crate::snapshot::PlatformIdentity {
-        manufacturer: registry("BaseBoardManufacturer")?,
-        product: registry("BaseBoardProduct")?,
-        bios_version: registry("BIOSVersion")?,
-        bios_date: registry("BIOSReleaseDate")?,
-    })
-}
-pub fn inspect_snapshot() -> crate::SnapshotInspection {
-    // Privilege changes affect the process token; serialize concurrent callers.
+pub fn read(variable: FirmwareVariable) -> ReadOutcome {
+    // Privilege changes affect the process token; serialize every adapter caller.
     static READ_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _read_lock = READ_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let mut report = ProbeReport::new();
-    let mut snapshot = None;
-    let mut firmware_type = 0;
-    // SAFETY: valid enum output; this API does not modify firmware.
-    if unsafe { GetFirmwareType(&mut firmware_type) } == 0 {
-        report.firmware.status = "query_failed";
-        report.firmware.error = Some(last_error("GetFirmwareType"));
-        return crate::SnapshotInspection { report, snapshot };
+    let mut result = ReadOutcome::default();
+    if variable.name.is_empty()
+        || variable.name.len() > 256
+        || variable.name.contains('\0')
+        || variable.guid.contains('\0')
+        || variable.guid.len() != 38
+    {
+        result.status = "invalid_variable_descriptor";
+        return result;
     }
-    report.firmware.status = match firmware_type {
+    let mut firmware_type = 0;
+    // SAFETY: valid enum output; querying does not modify firmware.
+    if unsafe { GetFirmwareType(&mut firmware_type) } == 0 {
+        result.firmware.status = "query_failed";
+        result.firmware.error = Some(last_error("GetFirmwareType"));
+        return result;
+    }
+    result.firmware.status = match firmware_type {
         FIRMWARE_TYPE_UEFI => "uefi",
         FIRMWARE_TYPE_BIOS => "legacy_bios",
         _ => "unknown",
     };
     if firmware_type != FIRMWARE_TYPE_UEFI {
-        report.variable.status = "unsupported_boot_mode";
-        return crate::SnapshotInspection { report, snapshot };
+        result.status = "unsupported_boot_mode";
+        return result;
     }
     let mut privilege = match PrivilegeGuard::enable() {
         Ok(guard) => guard,
         Err(error) => {
-            report.privilege.status = if error.win32_code == ERROR_NOT_ALL_ASSIGNED {
+            result.privilege.status = if error.win32_code == ERROR_NOT_ALL_ASSIGNED {
                 "not_assigned"
             } else {
                 "enable_failed"
             };
-            report.privilege.error = Some(error);
-            report.variable.status = "privilege_unavailable";
-            return crate::SnapshotInspection { report, snapshot };
+            result.privilege.error = Some(error);
+            result.status = "privilege_unavailable";
+            return result;
         }
     };
-    report.privilege.status = if privilege.restore_pending {
+    result.privilege.status = if privilege.restore_pending {
         "enabled_temporarily"
     } else {
         "already_enabled"
     };
-    let name = wide(VARIABLE_NAME);
-    let guid = wide(VARIABLE_GUID);
+    let name = wide(variable.name);
+    let guid = wide(variable.guid);
     let mut data = vec![0u8; READ_BUFFER_BYTES];
     let mut attributes = 0;
-    // SAFETY: fixed, NUL-terminated name/GUID; bounded writable buffer and attributes.
-    // This is the only firmware-variable API called by the probe. It is a getter.
+    // SAFETY: validated NUL-terminated names, bounded buffer and attributes.
+    // Getter only; this transport has no firmware setter or enumeration.
     let (length, error_code) = unsafe {
         SetLastError(0);
         let length = GetFirmwareEnvironmentVariableExW(
@@ -239,45 +197,27 @@ pub fn inspect_snapshot() -> crate::SnapshotInspection {
         (length as usize, GetLastError())
     };
     if length == 0 {
-        report.variable.status = "read_failed";
-        report.variable.error = Some(ProbeError::windows(
+        result.status = "read_failed";
+        result.error = Some(ProbeError::windows(
             "GetFirmwareEnvironmentVariableExW",
             error_code,
         ));
     } else if length > data.len() {
-        report.variable.status = "invalid_returned_length";
+        result.status = "invalid_returned_length";
     } else {
-        report.variable.status = "read";
-        report.variable.metadata = Some(VariableMetadata::decode(&data[..length], attributes));
-        snapshot = identity().ok().and_then(|identity| {
-            crate::snapshot::Snapshot::from_read(
-                &data[..length],
-                attributes,
-                identity,
-                crate::snapshot::Origin::Live,
-            )
-            .ok()
-        });
-        report.custom_curve_decoding = if snapshot.is_some() {
-            "partial_reference_fields"
-        } else {
-            "unavailable"
-        };
+        result.status = "read";
+        result.value = Some(RawVariable::new(data[..length].to_vec(), attributes));
     }
-    // Full bytes escape only the explicitly requested snapshot interface.
-    // inspect_fields/inspect discard them; no automatic file export exists.
     data.fill(0);
     match privilege.restore() {
-        Ok(status) => report.privilege_restoration = StepStatus::new(status),
+        Ok(status) => result.restoration = AccessStep::new(status),
         Err(error) => {
-            report.privilege_restoration.status = "restore_failed";
-            report.privilege_restoration.error = Some(error);
+            result.restoration.status = "restore_failed";
+            result.restoration.error = Some(error);
+            result.value = None; // Discard/zero raw data if process state was not restored.
         }
     }
-    if report.privilege_restoration.error.is_some() {
-        snapshot = None;
-    }
-    crate::SnapshotInspection { report, snapshot }
+    result
 }
 
 #[cfg(test)]

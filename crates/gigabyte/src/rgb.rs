@@ -1,21 +1,15 @@
 //! Independent Rust implementation of the ITE 8297 HID protocol.
 //! Protocol/layout facts were checked against pinned OpenRGB source; no SDK or C++ runtime.
-use crate::{DeviceAdapter, motherboard};
+use lightdriver_core::DeviceAdapter;
 use lightdriver_core::{
     CommandReceipt, CommandState, ControlAction, ControlRequest, ControlState, Device,
     DeviceStatus, LightingEffect, LightingOutput, LightingSettings, Mode, Support, now_ms,
 };
+use lightdriver_hardware::inventory as motherboard;
 
+#[cfg(test)]
 fn known_layout(name: &str) -> bool {
-    let normalized = name.trim().to_ascii_uppercase();
-    matches!(
-        normalized.trim_end_matches("-CF"),
-        "X570 AORUS ELITE"
-            | "X570 AORUS ELITE WIFI"
-            | "X570 AORUS PRO"
-            | "X570 AORUS PRO WIFI"
-            | "X570 AORUS ULTRA"
-    )
+    crate::profiles::rgb_layout(name)
 }
 pub(crate) fn outputs() -> Vec<LightingOutput> {
     vec![
@@ -55,10 +49,7 @@ fn firmware_report(report: &[u8]) -> Result<String, String> {
         report[4], report[5], report[6], report[7]
     ))
 }
-pub(crate) fn effect_reports(
-    channel: &str,
-    settings: &LightingSettings,
-) -> Result<[[u8; 64]; 2], String> {
+pub fn effect_reports(channel: &str, settings: &LightingSettings) -> Result<[[u8; 64]; 2], String> {
     settings.validate()?;
     let index = channel_index(channel)?;
     let mask = 1u32 << index;
@@ -107,7 +98,7 @@ pub(crate) fn effect_reports(
     Ok([effect, apply])
 }
 
-pub(crate) fn demo_board(enabled: bool) -> Device {
+pub fn demo_board(enabled: bool) -> Device {
     let mut board = motherboard::demo_board();
     board.status = DeviceStatus::Demo;
     board.control = ControlState {
@@ -130,6 +121,11 @@ pub(crate) struct GigabyteAdapter {
     owned: Option<(std::ffi::CString, hidapi::HidDevice, String)>,
 }
 #[cfg(windows)]
+fn known_live_layout() -> bool {
+    lightdriver_hardware::inventory::read_identity()
+        .is_ok_and(|identity| crate::profiles::support(&identity).rgb_layout.is_some())
+}
+#[cfg(windows)]
 fn matches(info: &hidapi::DeviceInfo) -> bool {
     info.vendor_id() == 0x048d
         && info.product_id() == 0x8297
@@ -143,7 +139,7 @@ impl DeviceAdapter for GigabyteAdapter {
     }
     fn poll(&mut self) -> Vec<Device> {
         let mut board = motherboard::discover_board();
-        if !known_layout(&board.name) {
+        if !known_live_layout() {
             self.owned = None;
             return vec![board];
         }
@@ -197,12 +193,11 @@ impl DeviceAdapter for GigabyteAdapter {
                     "RGB control released. Last device lighting remains.".into(),
                 ));
             }
-            if let Some(conflict) = crate::competing_controller() {
+            if let Some(conflict) = lightdriver_hardware::conflicts::competing_controller() {
                 self.owned = None;
                 return Err(conflict);
             }
-            let board = motherboard::discover_board();
-            if !known_layout(&board.name) {
+            if !known_live_layout() {
                 return Err("This board layout is not supported by the ITE adapter.".into());
             }
             let api = hidapi::HidApi::new().map_err(|_| "HID enumeration failed.")?;

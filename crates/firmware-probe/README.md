@@ -46,3 +46,7 @@ The reference-machine read succeeded after explicit UAC: expected size/header an
 A shared Rust library now also exposes the identified scalar fields to the separate [native Firmware fan lab](../fan-debug/README.md). Its strict format check is read-only and does not establish a writable BIOS identity. CLI JSON remains metadata-only, without raw capture or a setter. The library's separate inspect_snapshot API now retains the full reference variable and inventory for the fan lab's explicit private local save/comparison workflow; inspect/inspect_fields discard full bytes. Calls serialize temporary process-token privilege changes.
 
 See [the persistence investigation](../../docs/firmware-fan-persistence.md) for evidence and remaining gates.
+
+## Consolidated implementation
+
+The existing CLI and import path are retained as a compatibility facade. All firmware profiles/decoding/private snapshot logic now lives in `lightdriver-gigabyte`, using the bounded read-only transport in `lightdriver-hardware`. Live inspection requires the exact reviewed board/BIOS/date profile before transport access; unsupported identity reports `unsupported_board_bios` and performs no UEFI read or privilege change. Service and standalone debugger share the vendor backend; service discovery does not automatically invoke this privileged getter.
