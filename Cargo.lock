@@ -1321,6 +1321,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lightdriver-fan-debug"
+version = "0.1.0"
+dependencies = [
+ "iced",
+ "lightdriver-firmware-probe",
+ "png",
+ "tokio",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "lightdriver-firmware-probe"
 version = "0.1.0"
 dependencies = [

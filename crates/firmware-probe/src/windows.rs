@@ -133,14 +133,18 @@ impl Drop for PrivilegeGuard {
     }
 }
 
-pub fn inspect() -> ProbeReport {
+pub fn inspect_fields() -> crate::Inspection {
+    // Privilege changes affect the process token; serialize concurrent callers.
+    static READ_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _read_lock = READ_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let mut report = ProbeReport::new();
+    let mut fields = None;
     let mut firmware_type = 0;
     // SAFETY: valid enum output; this API does not modify firmware.
     if unsafe { GetFirmwareType(&mut firmware_type) } == 0 {
         report.firmware.status = "query_failed";
         report.firmware.error = Some(last_error("GetFirmwareType"));
-        return report;
+        return crate::Inspection { report, fields };
     }
     report.firmware.status = match firmware_type {
         FIRMWARE_TYPE_UEFI => "uefi",
@@ -149,7 +153,7 @@ pub fn inspect() -> ProbeReport {
     };
     if firmware_type != FIRMWARE_TYPE_UEFI {
         report.variable.status = "unsupported_boot_mode";
-        return report;
+        return crate::Inspection { report, fields };
     }
     let mut privilege = match PrivilegeGuard::enable() {
         Ok(guard) => guard,
@@ -161,7 +165,7 @@ pub fn inspect() -> ProbeReport {
             };
             report.privilege.error = Some(error);
             report.variable.status = "privilege_unavailable";
-            return report;
+            return crate::Inspection { report, fields };
         }
     };
     report.privilege.status = if privilege.restore_pending {
@@ -197,8 +201,10 @@ pub fn inspect() -> ProbeReport {
     } else {
         report.variable.status = "read";
         report.variable.metadata = Some(VariableMetadata::decode(&data[..length], attributes));
+        fields = crate::reference_layout::decode(&data[..length], attributes).ok();
     }
-    // No full payload enters the report, file, service or app.
+    // Only metadata and identified scalar fields escape this getter.
+    // No full payload enters a report, file, service, or app.
     data.fill(0);
     match privilege.restore() {
         Ok(status) => report.privilege_restoration = StepStatus::new(status),
@@ -207,7 +213,7 @@ pub fn inspect() -> ProbeReport {
             report.privilege_restoration.error = Some(error);
         }
     }
-    report
+    crate::Inspection { report, fields }
 }
 
 #[cfg(test)]

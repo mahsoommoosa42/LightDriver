@@ -96,6 +96,45 @@ Only metadata was exported to a private local report; no raw payload, usernames,
 
 Live read access and reference-header/attribute matching are now verified for that observation. The complete custom-curve layout, firmware write policy and changed-curve retention remain unverified. A matching header does not identify every firmware version or prove writable support.
 
+## Further offline decoding and write-policy investigation
+
+Continued static analysis of the same F41c image identifies the native GUI-to-firmware codec and a firmware lock mechanism. These are reverse-engineering observations, not supported Windows APIs or evidence of write permission. All addresses below are **PE RVAs**, not file offsets.
+
+| Module | FFS identity | SHA256 |
+| --- | --- | --- |
+| CoolSetupDataDxe | B7246C46-4200-4D44-BAE0-39CFDCAC6584 | 5F28C2C8F0C53005DAB302605E1082C4D2627D092081C633FF492A59D5353342 |
+| CoolGUI | 3B87CD35-0D65-415E-8B35-0DDADA13F30E | 16329F50BA5040D22248127C6485E7CBBCCDF99892E7A482813FE04C6C5E5FC2 |
+| NvramDxe | 1807040D-5934-41A2-A088-8E0F777F71AB | 7107DBC8E5905CD64ADA475C5E063BCDC0BFB64A712297253C19C3628B031D6C |
+| NvramSmm | 447A1B58-8F3E-4658-ABAA-9E7B2280B90A | 7661AD0318D70D5A2BED7964AF25F92B150DBCA78E15F4934D9C46A6B80D255A |
+
+
+**Firmware interface:** CoolSetupDataDxe installs C3E7A901-3A53-49BE-A6C2-CAF5B53F092A at RVA 0x415, with interface table at 0x3240. Entries point to form enumeration (0x1B4C), metadata (0x1BE8), a 53-byte internal-vector getter (0x1D64), setter/HII routing (0x1EEC), and whole-configuration handling (0x2370). CoolGUI locates it at 0x2C1A9 and calls the getter/setter at 0x27BF2/0x27FB9. This interface exists during firmware execution; it is not a callable Windows SDK.
+
+**Partial representation:** metadata flags 0x198 identify three extra segments, sign-magnitude coefficient deltas and accumulation from the preceding coefficient. The 53-byte internal vector is seven primary bytes, space for nine five-byte extras and one source byte. It is not a sequence of 53 curve points or the whole 569-byte variable. CoolGUI converts this vector to/from its 0xA8-byte graph representation at 0x27B8C/0x27D94; slope calculation at 0x28690 uses truncated level delta × 8 / temperature delta, with a cap of 127 and a special zero-span case. Save flow around 0x29E36–0x29EB5 routes through these conversions. Derived update rules and the roles of auxiliary bytes still need validation.
+
+The normal four-header forms map as follows:
+
+| Header | Form ID | Mode byte | First manual scalar byte | PWM/DC byte | Fan-stop byte |
+| --- | --- | --- | --- | --- | --- |
+| CPU_FAN | 0x27B1 | 0x00A | 0x00B | 0x20E | 0x21D |
+| CPU_OPT | 0x27B5 | 0x037 | 0x038 | 0x20F | 0x21E |
+| SYS_FAN1 | 0x27B9 | 0x064 | 0x065 | 0x214 | 0x21F |
+| SYS_FAN2 | 0x27BD | 0x091 | 0x092 | 0x215 | 0x220 |
+
+Each identified manual block contains off/start/full temperatures, start level, base coefficient, interval, source and three extra temperature/coefficient entries. The remainder of each 0x2D-byte block is **not fully decoded**. Presets can synthesize values instead of using these manual fields. The PCH form is excluded from editing. Whole-store profile import/export uses an "SF P" marker and CRC32; that private file format does not establish a public update contract.
+
+**Firmware locking:** NvramDxe contains the EDK II variable-lock protocol GUID CD3D0A05-9E24-437C-A891-1EE053DB7638. Its interface at 0xE270 points to callback 0x1C2C; installation occurs at 0x23DB. The callback sends lock registration through SMM operation 4. NvramSmm dispatches that operation at 0x7160–0x71C5 to registration at 0x5D48. Matching namespace/name checks at 0x5E2C–0x5EEA return EFI_WRITE_PROTECTED; write paths call the checker at 0x1821 and 0x545C. This is consistent with the [EDK II variable-lock definition](https://github.com/tianocore/edk2/blob/master/MdeModulePkg/Include/Protocol/VariableLock.h).
+
+Whether **GcSensorVarName itself is registered in that lock list has not been established**. Neither read success nor an incomplete literal-GUID scan proves external writes are allowed. Other AMI policies may also apply; [EDK II variable-policy definitions](https://github.com/tianocore/edk2/blob/master/MdeModulePkg/Include/Protocol/VariablePolicy.h) explain why variable policy is separate from storage format. No SMM payload, lock bypass, firmware flash, Windows setter or reboot was attempted.
+
+## Debug tool milestone
+
+The standalone [Firmware fan lab](../crates/fan-debug/README.md) shares the fixed-variable getter and a pure Rust partial decoder. It displays identified scalars and case-header percentage previews, never a complete writable payload. A 75% preview quantizes to 191/255 (~74.90%) between existing start/full thresholds; it does not prove fixed output at all temperatures.
+
+Write/readback and restore controls are disabled by construction. The current milestone implements Moosa's selected **continue decoding before enabling writes** route.
+
+Optional live RPM uses a separate read-only PawnIO tachometer adapter, not the UEFI store. Driver installation and physical RPM/channel validation remain outstanding. The firmware-buffer data is never used as a fabricated live-speed reading.
+
 ## Meaning of persistence
 
 | Event or action | What the candidate could provide | Current evidence |

@@ -6,7 +6,7 @@ Updated on 10 October 2026, Windows x64, Rust 1.99.0.
 
 - The complete Cargo workspace builds in release mode.
 - Formatting and workspace Clippy with `-D warnings` pass.
-- 47 automated tests pass, including actual demo service/named-pipe lifecycle tests.
+- 63 automated tests pass, including actual demo service/named-pipe lifecycle tests.
 - A second service cannot claim the same per-user/mode endpoint. Live clients cannot receive demo data.
 - The CPU-sensor handoff policy denies demo and elevated processes. An actual demo IPC request is rejected without stopping its service.
 - The account-specific Windows security descriptor is validated. Native verification confirms the ordinary UI can connect after UAC starts the elevated service.
@@ -21,6 +21,16 @@ Updated on 10 October 2026, Windows x64, Rust 1.99.0.
 - Profile import/export, legacy lighting defaults, user wiring identity and the explicit full-pump guard are validated. No header is assumed on a fresh install.
 
 The earlier [Windows diagnostics CI run](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37967280323) and [radial-load CI run](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37968772415) passed checks, release compilation and portable packaging. Portable artifacts include both executables and the launcher. These runs predate the CPU SDK/topology update; its latest validation is recorded in the repository's Actions tab.
+
+## Firmware fan lab checks
+
+The independent debug app builds in release mode; full-workspace formatting/Clippy checks pass. Its UI was captured and inspected at 1080 × 1100 and 920 × 680 with clearly marked synthetic RPM/settings. Content scrolls at smaller sizes. Firmware writes and restoration are disabled.
+
+Tests cover firmware-format rejection, scalar offset decoding without mutation, sign-magnitude coefficients, case-only preview bounds/quantization, stale proposal invalidation, tachometer enable/mode bits, invalid/no-pulse counts, board identity rejection, module digest rejection and late/stopped RPM-session handling. No firmware getter or driver request is made by demo or RPM unit tests. The existing privilege-guard test checks process-local token handling only.
+
+The optimized firmware probe still imports only the firmware type/getter APIs and no setter or driver I/O. The new debug executable imports the getter and DeviceIoControl for the separate RPM transport, with no firmware setter. Its Rust adapter has no PWM/curve-setting writes; necessary selector/configuration port outputs are documented in its README.
+
+Signed PawnIO was absent here, so the new live tachometer path and its proposed header mapping are **not yet physically validated**. A pinned official LpcIO module was staged locally in the ignored support directory. No motherboard setting was written or reboot performed.
 
 ## Native UI and performance
 

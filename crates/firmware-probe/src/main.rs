@@ -1,7 +1,4 @@
 //! Standalone research tool. One fixed firmware-variable read; no setters or drivers.
-mod report;
-#[cfg(windows)]
-mod windows;
 
 use std::{ffi::OsString, fs::OpenOptions, io::Write, path::PathBuf, process::ExitCode};
 
@@ -41,10 +38,7 @@ fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
         return Ok(ExitCode::SUCCESS);
     }
     let output = parse_args(args)?;
-    #[cfg(windows)]
-    let report = windows::inspect();
-    #[cfg(not(windows))]
-    let report = report::ProbeReport::unsupported();
+    let report = lightdriver_firmware_probe::inspect();
     let mut json = serde_json::to_vec_pretty(&report)?;
     json.push(b'\n');
     if let Some(path) = output {

@@ -7,7 +7,7 @@ pub const REFERENCE_LENGTH: usize = 569;
 #[cfg(any(windows, test))]
 const REFERENCE_BOARD_ID: &[u8; 8] = b"8AMTS010";
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProbeReport {
     pub schema_version: u32,
     pub probe_version: &'static str,
@@ -21,6 +21,12 @@ pub struct ProbeReport {
     pub custom_curve_decoding: &'static str,
     pub firmware_write_permission: &'static str,
     pub reboot_retention: &'static str,
+}
+
+impl Default for ProbeReport {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ProbeReport {
@@ -54,7 +60,7 @@ impl ProbeReport {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct StepStatus {
     pub status: &'static str,
     pub error: Option<ProbeError>,
@@ -68,7 +74,7 @@ impl StepStatus {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ProbeError {
     pub operation: &'static str,
     pub win32_code: u32,
@@ -85,14 +91,14 @@ impl ProbeError {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VariableRead {
     pub status: &'static str,
     pub error: Option<ProbeError>,
     pub metadata: Option<VariableMetadata>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VariableMetadata {
     pub length_bytes: usize,
     pub attributes_hex: String,
@@ -104,7 +110,7 @@ pub struct VariableMetadata {
     pub header: HeaderMetadata,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct HeaderMetadata {
     pub board_image_id: Option<String>,
     pub declared_length_bytes: Option<u16>,

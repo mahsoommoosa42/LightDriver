@@ -25,13 +25,15 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test
         run: cargo test --workspace --locked
-      - name: Build desktop and service
+      - name: Build Rust workspace
         run: cargo build --workspace --release --locked
       - name: Package portable app
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist/LightDriver/docs -Force
-          Copy-Item target/release/lightdriver-desktop.exe,target/release/lightdriver-service.exe,LightDriver.cmd,README.md dist/LightDriver/
+          New-Item -ItemType Directory -Path dist/LightDriver/crates/fan-debug -Force
+          Copy-Item target/release/lightdriver-desktop.exe,target/release/lightdriver-service.exe,target/release/lightdriver-fan-debug.exe,target/release/lightdriver-firmware-probe.exe,LightDriver.cmd,FanDebug.cmd,README.md dist/LightDriver/
+          Copy-Item crates/fan-debug/README.md dist/LightDriver/crates/fan-debug/
           Copy-Item docs/* dist/LightDriver/docs/
       - uses: actions/upload-artifact@v7
         with:

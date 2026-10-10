@@ -43,4 +43,6 @@ An import audit of the optimized Windows executable found only `GetFirmwareType`
 
 The reference-machine read succeeded after explicit UAC: expected size/header and attributes `0x7`; process privilege restoration succeeded. The actual report remains local. Write permission, custom-curve encoding and reboot retention remain untested.
 
+A shared Rust library now also exposes the identified scalar fields to the separate [native Firmware fan lab](../fan-debug/README.md). Its strict format check is read-only and does not establish a writable BIOS identity. The CLI JSON remains metadata-only, and no full-payload export or setter exists. Calls serialize temporary process-token privilege changes.
+
 See [the persistence investigation](../../docs/firmware-fan-persistence.md) for evidence and remaining gates.
