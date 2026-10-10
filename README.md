@@ -22,6 +22,8 @@ The screenshot is the running native application in demo mode. See the [verifica
 | Live logging | Error/Warning/Info/Debug/Verbose, system context, filter/pause/follow and local JSON export; raw packets only in Verbose |
 | Verification | Command receipts and local self-reported hardware test reports; writes remain physically unverified |
 
+Motherboard automatic-curve programming is being investigated; hardware support and persistence remain unverified. See the [fan-curve feasibility report](docs/motherboard-curves.md).
+
 X53, X63, and X73 share a USB identity, so discovery identifies the **Kraken X3 family**, rather than claiming to distinguish the radiator model. Both known X3 product IDs are recognized; support beyond the reference X53 needs hardware testing.
 
 The motherboard name is discovered from Windows inventory. RGB control also checks the USB vendor/product ID, HID usage, known board layout and controller identity. Initial ITE 8297 layouts cover X570 AORUS ELITE, ELITE WIFI, PRO, PRO WIFI and ULTRA. Other boards need a documented adapter/layout; they do not receive guessed commands. Header assignments have no global defaults and are tied to the user's detected board identity.
