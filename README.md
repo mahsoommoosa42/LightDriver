@@ -22,7 +22,7 @@ The screenshot is the running native application in demo mode. See the [verifica
 | Live logging | Error/Warning/Info/Debug/Verbose, system context, filter/pause/follow and local JSON export; raw packets only in Verbose |
 | Verification | Command receipts and local self-reported hardware test reports; writes remain physically unverified |
 
-Motherboard automatic-curve programming is being investigated; hardware support and persistence remain unverified. See the [fan-curve feasibility report](docs/motherboard-curves.md).
+Motherboard fan curves remain controlled by BIOS. Research has identified a firmware-variable candidate for saving curves from Windows; complete curve encoding, write permission and reboot behavior remain unverified. See the [BIOS persistence investigation](docs/firmware-fan-persistence.md) and [controller-curve feasibility report](docs/motherboard-curves.md).
 
 X53, X63, and X73 share a USB identity, so discovery identifies the **Kraken X3 family**, rather than claiming to distinguish the radiator model. Both known X3 product IDs are recognized; support beyond the reference X53 needs hardware testing.
 

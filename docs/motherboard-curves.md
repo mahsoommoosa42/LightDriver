@@ -4,11 +4,11 @@ Investigation updated 10 October 2026. Scope: edit a curve in LightDriver, apply
 
 ## Conclusion
 
-There is a credible path to autonomous hardware curves on recognized controllers, but LightDriver cannot claim it works on the reference board yet. Windows curve editing is established in GIGABYTE's own software; third-party curve programming, exit behavior and reboot persistence need separate verification.
+Moosa chose **further research of true BIOS persistence first**. Startup/resume reapplication has not been selected or implemented.
 
-Recommend a controller-resident curve with an optional **reapply at Windows startup/resume** setting. This is a proposal, not an implemented or accepted architecture decision. It avoids continuous duty updates while accounting for firmware reinitialization. It does not change the curve used before Windows starts.
+The follow-up [firmware persistence investigation](firmware-fan-persistence.md) identified a dedicated fan-settings UEFI variable in the official X570 AORUS ELITE WIFI F41c image. Firmware saves it with nonvolatile and runtime-access attributes and reads it during boot. Windows' standard UEFI API is now a concrete candidate; the live variable's write permission and complete custom-curve encoding remain unverified.
 
-A true **save into BIOS** feature is not currently supported by an identified vendor API. Neither a saved LightDriver profile nor a successful register write establishes firmware persistence.
+There is also a credible path to autonomous controller-resident curves on recognized chips. The controller-register approach below is a deferred alternative, with different reboot behavior. Neither a saved LightDriver profile nor a successful register write establishes firmware persistence.
 
 ## Evidence and limits
 
@@ -40,7 +40,7 @@ Catalog temperature labels are System 1, System 2, CPU, PCIEX16, VRM MOS and PCH
 
 For a passive PWM hub, the curve belongs to its connected motherboard fan header. Fans sharing that PWM signal share its curve; one reported tachometer does not establish the speed of every connected fan. The ARGB header assignment is separate from PWM fan wiring.
 
-## What applying a curve would require
+## Runtime controller programming alternative (deferred)
 
 1. Match board identity, chip ID/revision and runtime access path to an explicit supported profile. Never infer writable support from the motherboard name alone.
 2. Read the current automatic mode, complete primary and extra-vector state, sensor selection, hysteresis and PWM/DC configuration. Preserve an original snapshot for rollback.
@@ -54,7 +54,7 @@ The newer primary it87 fields include fan-off, start and full-speed temperatures
 
 GIGABYTE's other controller generations can use H2RAM vector tables and different transports. Those layouts must have separate adapters; addresses or rules for IT879x must not be reused for IT8688.
 
-## Exit and persistence
+## Exit and persistence of runtime controller programming
 
 | Event | Expected behavior of the proposed hardware-curve design | Verification status |
 | --- | --- | --- |
@@ -64,13 +64,13 @@ GIGABYTE's other controller generations can use H2RAM vector tables and differen
 | Sleep / resume | Firmware may restore its own configuration; optionally reapply after detecting resume and revalidating identity | Untested |
 | Windows restart | Assume firmware reinitializes the controller; optionally reapply the saved profile when the startup service runs | Planning assumption, not a measured result |
 | Full shutdown and cold power-on | Treat runtime state as nonpersistent unless exact hardware evidence proves otherwise | Untested |
-| Boot BIOS setup, another OS, or Windows without LightDriver startup | Only a verified firmware-persistent curve could guarantee the new profile there | No supported persistence path established |
+| Boot BIOS setup, another OS, or Windows without LightDriver startup | Only a verified firmware-persistent curve could guarantee the new profile there | Firmware-variable candidate identified; Windows writes and retention untested |
 
 App exit and service exit are separate tests. The current application already leaves its local service running after the GUI closes, so closing the GUI alone cannot prove autonomous hardware regulation.
 
 Boot reapplication means **the profile takes effect again after Windows starts**. It does not mean the controller retained it across reboot, or that BIOS settings changed. Until then, the motherboard's existing firmware curve governs cooling.
 
-## Rust architecture proposal
+## Runtime controller architecture proposal (deferred)
 
 Keep curve modeling and validation in the Rust core, board/chip encoding in device adapters, privileged access and apply transactions in the Rust service, and the draft editor in Iced.
 
@@ -80,9 +80,9 @@ An optional startup/resume path would store an explicitly enabled profile, valid
 
 The existing service is not installed as an automatically starting Windows service. Creating startup behavior is a separate implementation decision and setup action; it has not been added by this investigation.
 
-## Transport and source boundaries
+## Runtime transport and source boundaries
 
-The selected signed PawnIO driver remains an external dependency. The released module reference is `52a7e536dff3e53c96917a28caac5e0fa6510696` (0.2.11). Its LpcIO access functions mask register values to a byte; banked runtime addressing still requires the correct chip protocol. IsaBridgeEC is a separate MMIO option, not proof that every it87 firmware workaround is available on Windows.
+The previously selected signed PawnIO driver is a candidate external dependency for direct controller access. The firmware-variable persistence candidate uses a different transport and may not need PawnIO. The released module reference is `52a7e536dff3e53c96917a28caac5e0fa6510696` (0.2.11). Its LpcIO access functions mask register values to a byte; banked runtime addressing still requires the correct chip protocol. IsaBridgeEC is a separate MMIO option, not proof that every it87 firmware workaround is available on Windows.
 
 Shared register-index/bank operations need serialized access and the established ISA access mutex. Coordination with other monitoring/control applications and firmware is part of validation; a user-mode mutex alone cannot prevent firmware activity.
 
@@ -99,7 +99,7 @@ Upstream source was inspected for protocol facts; no upstream C/Pawn code was co
 5. Test resume, ordinary restart and full cold power-on separately. Record whether values were retained, reset or reapplied; account for Windows Fast Startup.
 6. Verify rollback and conflicts with vendor software before advertising writable support for that exact board/controller profile.
 
-Physical testing is deferred. Motherboard fan-curve programming remains unimplemented.
+Physical testing is deferred. Motherboard fan-curve programming remains unimplemented. The next research gates are the live variable's read-only metadata, full firmware curve codec and write policy, as described in the persistence report.
 
 ## Sources
 
