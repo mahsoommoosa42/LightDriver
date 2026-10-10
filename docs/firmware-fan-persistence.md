@@ -129,7 +129,7 @@ Whether **GcSensorVarName itself is registered in that lock list has not been es
 
 ## Debug tool milestone
 
-The standalone [Firmware fan lab](../crates/fan-debug/README.md) shares the fixed-variable getter and a pure Rust partial decoder. It displays identified scalars and case-header percentage previews, never a complete writable payload. A 75% preview quantizes to 191/255 (~74.90%) between existing start/full thresholds; it does not prove fixed output at all temperatures.
+The standalone [Firmware fan lab](../crates/fan-debug/README.md) shares the fixed-variable getter and a pure Rust partial decoder. It displays identified scalars and case-header previews, including full-length offline patches; no candidate is a validated writable payload. A 75% preview quantizes to 191/255 (~74.90%) between existing start/full thresholds; it does not prove fixed output at all temperatures.
 
 Write/readback and restore controls are disabled by construction. The current milestone implements Moosa's selected **continue decoding before enabling writes** route.
 
@@ -150,14 +150,14 @@ The intended finished feature saves firmware-owned curves that work before Windo
 
 ## Next validation gates
 
-1. **Completed:** build and run the narrowly scoped, read-only Rust probe for this exact variable. UEFI mode, read access, attributes, length, header and process privilege restoration were confirmed after explicit UAC. The tool has no setter, variable enumeration, raw capture or firmware flashing.
+1. **Completed:** build and run the narrowly scoped, read-only Rust probe for this exact variable. UEFI mode, read access, attributes, length, header and process privilege restoration were confirmed after explicit UAC. The metadata CLI has no setter, variable enumeration, raw capture or firmware flashing. The lab's separately authorized private snapshot interface is described below.
 2. **Partially completed:** the live size/header/attributes match the reference format. Complete board/BIOS identity gates and custom-curve layout validation before any writable adapter is considered. A matching board name or header alone is insufficient.
 3. Complete the custom-curve codec and derived-field rules through offline analysis and controlled before/after captures of BIOS-made changes. Preserve every unknown byte. Verify point limits, encoding, selected onboard sensor, interpolation, hysteresis, fan stop and PWM/DC relationships.
 4. Investigate firmware write policy. Read success does not prove write success. If the standard API is denied, report that limit and seek a supported vendor interface; do not bypass firmware protection.
 5. Only after the codec and recovery procedure are established, explicitly approve a change on an identified noncritical fan header. Back up the original store, check it has not changed, submit one supported update and read back the result. A preceding comparison does not make the firmware API atomic; concurrent vendor utilities must be excluded during validation.
 6. Verify BIOS display, real temperature-dependent fan response, GUI and service exit, restart, cold boot and resume separately. Account for Fast Startup and verify that no application silently reapplies the curve. Test restoration of the original settings.
 
-Fan-response, write-permission and reboot-persistence tests remain deferred. The metadata read above is the only live firmware operation performed; no curve is writable or advertised as persistent yet.
+Fan-response, write-permission and reboot-persistence tests remain deferred. Live metadata and private snapshot reads are documented below; no curve is writable or advertised as persistent yet.
 
 ## Expandable Rust design, if validation succeeds
 
@@ -175,3 +175,29 @@ This is a research direction, not an implemented architecture change. The servic
 - [Microsoft documented UEFI attribute constants](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/wdm/nf-wdm-exgetfirmwareenvironmentvariable).
 - [UEFI 2.11 runtime variable services](https://uefi.org/specs/UEFI/2.11/08_Services_Runtime_Services.html): variable lifetime and runtime access rules.
 - [UEFIExtract A75](https://github.com/LongSoft/UEFITool/releases/tag/A75) and [IFRExtractor-RS 1.6.1](https://github.com/LongSoft/IFRExtractor-RS/releases/tag/v1.6.1): offline analysis tools.
+
+
+
+## Firmware lab snapshot tooling — 10 October 2026
+
+Read-only registry/CIM inventory reports X570 AORUS ELITE WIFI, BIOS F41c, released 18 August 2026. This matches the analysed image but does not attest the entire installed binary or board revision.
+
+Further CoolGUI inspection shows graph reconstruction at RVAs 0x28D71–0x28E91 using accumulated coefficients, 7-bit bounds, slope/8 and clamping. The graph save path calls the integer slope calculation at 0x29E98 before conversion through 0x27D94. The lab offers a labelled research estimate for valid Manual fields; exact rounding, preset synthesis and all callback effects are still not independently validated.
+
+The lab retains a full private snapshot through its snapshot interface and compares every byte including unidentified fields. Its GUI automatically reads once on open and saves/verifies an immutable initial backup after the first successful read, as requested by Moosa. Additional captures and imports are explicit. The metadata CLI still excludes payloads. Fixed-level candidates are full-length offline copies with identified start-level/coefficients patched and all other bytes preserved; no candidate reaches a firmware setter.
+
+There is no live-write transport, restoration command or protection bypass. A snapshot provides recovery data but is not a tested restoration method. Import digests detect corruption, not authenticated hardware provenance. Getter/comparison tools can check equal storage and controlled BIOS changes; they cannot prove write acceptance or persistence alone.
+
+[FanControl's public-source study](fancontrol-study.md) found no UEFI/BIOS-save path for these curves. Its open backend provides useful RPM/runtime references and does not complete this codec.
+
+
+
+## Initial recovery and factory reference — 10 October 2026
+
+Each GUI session anchors its first successful live snapshot before disk I/O, writes a new private file in %LOCALAPPDATA%\LightDriver\FirmwareBackups, and reloads it for full byte-for-byte and timestamp verification. Subsequent refreshes cannot replace the initial state. Failed disk saves retain the original in memory and can be retried. Prior sessions' files remain available; a new launch does not overwrite the previous baseline.
+
+The official F41c CoolSetupDataDxe default/mode tables at RVAs 0x3460–0x3604 provide the Normal reference for SYS_FAN1 and SYS_FAN2: off/start/full 0/20/60 °C, initial level 70/255, base coefficient 28, interval 3, source 0; additional thresholds 30/40/50 °C with coefficient deltas 0/0/36. The factory stored mode is 0 (Normal). These facts were independently rechecked against the offline extracted image; they are bundled as a declarative Rust reference, not as vendor firmware or a factory NVRAM blob.
+
+Factory restore preview selects Normal on the chosen case header and preserves source, PWM/DC, fan-stop and inactive custom fields. Initial restore preview proposes that header's original 45-byte block plus two known PWM/DC/fan-stop bytes. Both preserve other headers. This defines a fan-curve restore target, not a whole-BIOS reset or proof that shared callback effects are decoded. Actual restore remains disabled.
+
+Two elevated live captures produced identical 569-byte snapshots with zero identified or unknown changed bytes. Both case headers had Normal selected and zero inactive manual fields. This confirms current preset storage, not a ready Manual encoder. A controlled BIOS-made Manual capture/diff remains necessary. No firmware write or restart occurred.

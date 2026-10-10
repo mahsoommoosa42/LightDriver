@@ -91,8 +91,9 @@ Iced desktop ── bounded, versioned local IPC ── Rust service
 | `lightdriver-monitoring` | Read-only CPU topology/load/clocks, optional AMD CPU SDK and AMD/NVIDIA/Intel GPU collectors |
 | `lightdriver-service` | Single owner per user/mode, serialized polling/commands and bounded receipt cache |
 | `lightdriver-desktop` | Native Workbench, explicit Apply, profiles, wiring and evidence export |
+| `lightdriver-branding` | Shared approved logo, cached image and native icons |
 | `lightdriver-firmware-probe` | Separate opt-in getter and partial reference-layout decoder; no firmware writes |
-| `lightdriver-fan-debug` | Standalone native firmware fan lab: read identified fields and preview fixed levels; writes locked |
+| `lightdriver-fan-debug` | Standalone native firmware fan lab: initial recovery backup, factory/initial restore previews, byte comparisons and live RPM; writes locked |
 
 All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The local API contains snapshots, typed device commands, separate bounded log batches and the explicit CPU-sensor handoff. The service validates mode, device, capability, payload and deadline. It serializes commands with polling, retains duplicate receipts for the full request deadline, and never retries unknown hardware outcomes.
 
@@ -166,3 +167,10 @@ After updating from an older build, restart the local service: protocol version 
 ![Diagnostics with simulated CPU and GPU readings](docs/diagnostics-basic.png)
 
 ![Physical-core diagram with simulated SMT loads and shared L3 groups](docs/diagnostics-cores.png)
+
+
+## Firmware fan lab
+
+[FanDebug.cmd](FanDebug.cmd) opens the separate lab. It reads once on launch and privately saves/verifies the first successful live snapshot for that session. Refreshes do not replace it. The reviewed F41c case-fan Normal preset is bundled separately, with Initial and Factory restore previews, complete byte comparison and optional PawnIO RPM monitoring. Firmware writes/restoration stay locked pending codec, policy and physical validation. See [lab usage](crates/fan-debug/README.md), [firmware research](docs/firmware-fan-persistence.md) and [FanControl study](docs/fancontrol-study.md).
+
+Both native UIs now use the approved rainbow-arches logo in their headers and Windows icons. Assets are embedded; portable builds need no separate logo file.

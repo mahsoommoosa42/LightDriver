@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/ipc", "crates/devices", "crates/service", "crates/desktop", "crates/monitoring", "crates/firmware-probe", "crates/fan-debug"]
+members = ["crates/branding", "crates/core", "crates/ipc", "crates/devices", "crates/service", "crates/desktop", "crates/monitoring", "crates/firmware-probe", "crates/fan-debug"]
 
 [workspace.package]
 version = "0.1.0"
@@ -9,6 +9,8 @@ rust-version = "1.88"
 publish = false
 
 [workspace.dependencies]
+lightdriver-branding = { path = "crates/branding" }
+winresource = "0.1.31"
 lightdriver-core = { path = "crates/core" }
 lightdriver-ipc = { path = "crates/ipc" }
 lightdriver-devices = { path = "crates/devices" }
@@ -17,7 +19,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "signal"] }
 interprocess = { version = "2.4.4", features = ["tokio"] }
-iced = { version = "0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "canvas", "tokio", "sysinfo"] }
+iced = { version = "0.14.0", default-features = false, features = ["wgpu", "tiny-skia", "canvas", "tokio", "sysinfo", "image-without-codecs"] }
 
 [profile.dev]
 debug = 1

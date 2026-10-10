@@ -11,3 +11,7 @@
 
 
 /FanDebug-support/
+
+
+# Full firmware research snapshots must never be published.
+*.private.json

@@ -17,7 +17,7 @@ use lightdriver_core::{
 impl Workbench {
     pub fn layout(&self) -> Element<'_, Message> {
         let brand = row![
-            text("◌").size(27).color(style::ACCENT),
+            lightdriver_branding::mark(46),
             heading("LightDriver", 18),
             label("WORKBENCH"),
             Space::new().width(Fill),

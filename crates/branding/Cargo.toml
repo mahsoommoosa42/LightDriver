@@ -1,0 +1,11 @@
+[package]
+name = "lightdriver-branding"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+iced.workspace = true
+png = "0.18"
+image = { version = "0.25", default-features = false }

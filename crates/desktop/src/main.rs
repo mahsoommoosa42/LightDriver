@@ -652,6 +652,7 @@ fn main() -> iced::Result {
         .theme(Workbench::theme)
         .default_font(Font::with_name("Segoe UI"))
         .window(window::Settings {
+            icon: lightdriver_branding::window_icon(),
             size,
             min_size: Some(iced::Size::new(980.0, 720.0)),
             ..Default::default()

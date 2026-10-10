@@ -14,7 +14,7 @@ pub enum Header {
 impl Header {
     pub const ALL: [Self; 4] = [Self::CpuFan, Self::CpuOpt, Self::SysFan1, Self::SysFan2];
     pub const CASE: [Self; 2] = [Self::SysFan1, Self::SysFan2];
-    fn block(self) -> usize {
+    pub(crate) fn block(self) -> usize {
         match self {
             Self::CpuFan => 0x0a,
             Self::CpuOpt => 0x37,
@@ -22,7 +22,7 @@ impl Header {
             Self::SysFan2 => 0x91,
         }
     }
-    fn tail(self) -> (usize, usize) {
+    pub(crate) fn tail(self) -> (usize, usize) {
         match self {
             Self::CpuFan => (0x20e, 0x21d),
             Self::CpuOpt => (0x20f, 0x21e),
@@ -228,6 +228,37 @@ pub fn preview(settings: HeaderSettings, percent: u8) -> Result<LevelPreview, &'
 }
 
 pub fn synthetic_example() -> [HeaderSettings; 4] {
+    decode(&synthetic_payload(), 7).expect("synthetic reference format")
+}
+
+/// Declarative Normal-preset facts from the reviewed F41c CoolSetupDataDxe
+/// tables at RVAs 0x3460–0x3604, not a factory NVRAM payload.
+/// Manual mode here is used only to reconstruct the reference graph.
+pub fn factory_normal_graph(header: Header) -> Option<HeaderSettings> {
+    if !Header::CASE.contains(&header) {
+        return None;
+    }
+    Some(HeaderSettings {
+        header,
+        mode_raw: 2,
+        off_temperature: 0,
+        start_temperature: 20,
+        full_temperature: 60,
+        start_level_raw: 70,
+        base_coefficient_raw: 28,
+        interval_raw: 3,
+        source_raw: 0,
+        segments: std::array::from_fn(|i| Segment {
+            temperature: [30, 40, 50][i],
+            auxiliary_raw: 0,
+            coefficient_delta: [0, 0, 36][i],
+            coefficient_raw: [0, 0, 36][i],
+        }),
+        pwm_dc_raw: 0,
+        fan_stop_raw: 0,
+    })
+}
+pub(crate) fn synthetic_payload() -> [u8; PAYLOAD_LENGTH] {
     let mut data = [0; PAYLOAD_LENGTH];
     data[..8].copy_from_slice(BOARD_IMAGE_ID);
     data[8..10].copy_from_slice(&(PAYLOAD_LENGTH as u16).to_le_bytes());
@@ -247,9 +278,47 @@ pub fn synthetic_example() -> [HeaderSettings; 4] {
         let (pwm_dc, _) = header.tail();
         data[pwm_dc] = 2;
     }
-    decode(&data, 7).expect("synthetic reference format")
+    data
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct GraphPoint {
+    pub temperature: f32,
+    pub percent: f32,
+}
+/// Research reconstruction using the reviewed GUI's slope/8 calculation.
+/// Not measured duty. Presets, sensor routing and callback semantics are excluded.
+pub fn manual_graph(settings: HeaderSettings) -> Result<Vec<GraphPoint>, &'static str> {
+    preview(settings, 50)?;
+    let coefficients = settings.accumulated_coefficients();
+    if coefficients.iter().any(|c| !(0..=127).contains(c)) {
+        return Err("Coefficient range is outside the reviewed graph reconstruction");
+    }
+    let mut values = Vec::new();
+    let mut level = f32::from(settings.start_level_raw);
+    let mut start = settings.start_temperature;
+    let ends = [
+        settings.segments[0].temperature,
+        settings.segments[1].temperature,
+        settings.segments[2].temperature,
+        settings.full_temperature,
+    ];
+    for (coefficient, end) in coefficients.into_iter().zip(ends) {
+        for temperature in start..end {
+            values.push(GraphPoint {
+                temperature: f32::from(temperature),
+                percent: level.clamp(0.0, 255.0) * 100.0 / 255.0,
+            });
+            level += coefficient as f32 / 8.0;
+        }
+        start = end;
+    }
+    values.push(GraphPoint {
+        temperature: f32::from(settings.full_temperature),
+        percent: 100.0,
+    });
+    Ok(values)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -326,6 +395,20 @@ mod tests {
         unknown = settings[2];
         unknown.segments[1].temperature = unknown.segments[0].temperature;
         assert!(preview(unknown, 75).is_err());
+    }
+    #[test]
+    fn graph_reconstruction_is_bounded_and_does_not_treat_presets_as_manual() {
+        let mut s = synthetic_example()[2];
+        let points = manual_graph(s).unwrap();
+        assert_eq!(points.first().unwrap().temperature, 25.0);
+        assert_eq!(points.last().unwrap().temperature, 85.0);
+        assert_eq!(points.last().unwrap().percent, 100.0);
+        assert!(points.iter().all(|p| (0.0..=100.0).contains(&p.percent)));
+        s.mode_raw = 0;
+        assert!(manual_graph(s).is_err());
+        s.mode_raw = 2;
+        s.base_coefficient_raw = 128;
+        assert!(manual_graph(s).is_err());
     }
     #[test]
     fn sign_magnitude_handles_negative_zero_and_largest_magnitude() {

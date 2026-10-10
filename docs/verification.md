@@ -6,7 +6,7 @@ Updated on 10 October 2026, Windows x64, Rust 1.99.0.
 
 - The complete Cargo workspace builds in release mode.
 - Formatting and workspace Clippy with `-D warnings` pass.
-- 66 automated tests pass, including actual demo service/named-pipe lifecycle tests.
+- 78 automated tests pass, including actual demo service/named-pipe lifecycle tests.
 - A second service cannot claim the same per-user/mode endpoint. Live clients cannot receive demo data.
 - The CPU-sensor handoff policy denies demo and elevated processes. An actual demo IPC request is rejected without stopping its service.
 - The account-specific Windows security descriptor is validated. Native verification confirms the ordinary UI can connect after UAC starts the elevated service.
@@ -24,14 +24,23 @@ The earlier [Windows diagnostics CI run](https://github.com/mahsoommoosa42/Light
 
 ## Firmware fan lab checks
 
-The independent debug app builds in release mode; full-workspace formatting/Clippy checks pass. Its UI was captured and inspected at 1080 × 1100 and 920 × 680 with clearly marked synthetic RPM/settings. Content scrolls at smaller sizes. Firmware writes and restoration are disabled.
+The independent debug app builds in release mode; full-workspace formatting/Clippy checks pass. Its UI was captured and inspected at 1080 × 1500 (snapshots), 1080 × 1900 (factory preview) and 920 × 680 with clearly marked synthetic RPM/settings. Content scrolls at smaller sizes. Firmware writes and restoration are disabled.
 
-Tests cover firmware-format rejection, scalar offset decoding without mutation, sign-magnitude coefficients, case-only preview bounds/quantization, stale proposal invalidation, fixed IT8688 16-bit tachometers, enable bits, chip/revision recognition, bounded support-check arguments and new-report preservation, invalid/no-pulse counts, board identity rejection, module digest rejection and late/stopped RPM-session handling. No firmware getter or driver request is made by demo or RPM unit tests. The existing privilege-guard test checks process-local token handling only.
+Tests cover firmware-format rejection, scalar offset decoding without mutation, sign-magnitude coefficients, case-only preview bounds/quantization, stale proposal invalidation, fixed IT8688 16-bit tachometers, enable bits, chip/revision recognition, bounded support-check arguments and new-report preservation, invalid/no-pulse counts, board identity rejection, module digest rejection and late/stopped RPM-session handling. Additional tests cover strict full-snapshot import/export, create-new preservation, corrupted/truncated/bounded imports, unknown-byte comparisons, origin/inventory rejection, case-only offline patches, initial anchoring across refreshes and header-scoped restore previews. Demo creates no automatic recovery file. No firmware getter or driver request is made by demo or RPM unit tests. The existing privilege-guard test checks process-local token handling only.
 
 The optimized firmware probe still imports only the firmware type/getter APIs and no setter or driver I/O. The new debug executable imports the getter and DeviceIoControl for the separate RPM transport, with no firmware setter. Its Rust adapter has no PWM/curve-setting writes; necessary selector/configuration port outputs are documented in its README.
 
 After normal installation, PawnIO 2.2.0 was observed running with a valid Microsoft Windows Hardware Compatibility Publisher signature. Normal-token driver access returned access denied. Elevated checks identified IT8688 revision 1 at I/O base 0x0A40 / Super I/O port 0x2E. The first run caught a revision-2-only recognition limit and an incorrectly applied older-ITE 8/16-bit mode rule. The adapter now accepts reviewed revisions 1/2 and uses fixed 16-bit counters for IT8688. Three subsequent samples returned three changing nonzero RPM readings and two no-pulse readings, with sample durations of 14–35 ms. Header wiring and independent RPM accuracy remain unverified; revision 2 has not been tested physically. Reports remain in ignored private .data storage. No fan setting or firmware variable was written and no reboot was performed.
 
+Two explicit elevated firmware captures matched byte for byte (569 bytes; zero unidentified differences). Both case headers reported Normal mode with zero inactive manual fields. The GUI startup read also created a new initial snapshot in the private LocalAppData recovery folder, reloaded it, and matched the previous capture exactly. This validates local backup/comparison and preservation of the initial state, not firmware writes or restoration. No restart occurred.
+
+The compiled F41c factory Normal reference was independently checked against the official image's case-header default/mode tables. The app proposes selecting Normal while preserving source/PWM/fan-stop settings. Both actual restore actions remain disabled.
+
+Both native UIs were recaptured with the approved stem-free rainbow logo in their headers. Full and minimum-size fan-lab layouts were inspected; rendering remains Vulkan/Release. PE resource inspection verified icon ID 1 and matching packaged PNG bytes in both executables, alongside version resources. Shared branding caches pixels/image handles rather than decoding on every redraw.
+
+![Workbench with the approved logo, simulated readings](workbench-branded.png)
+
+![Firmware lab with private recovery previews, simulated data](firmware-fan-lab.png)
 ## Native UI and performance
 
 The running release Iced application was captured and inspected. Diagnostics now contains CPU/GPU radial load, temperature and clock cards with a physical-core toggle. Core tiles show separate SMT bars and shared-L3 groups; rows adapt to the window width. Simulated 8-, 16-, 24- and 64-core layouts were captured; the 8-core layout was checked at the minimum 980 × 720. Longer diagrams scroll vertically. Captures confirmed Vulkan GPU rendering. The pump, ring/logo, case-lighting and Setup screens were also captured at normal and minimum window sizes; longer content scrolls vertically. Live logs were captured at Info and Verbose, with system configuration expanded, and at the minimum window size.
