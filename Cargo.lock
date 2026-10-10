@@ -1327,6 +1327,7 @@ dependencies = [
  "iced",
  "lightdriver-firmware-probe",
  "png",
+ "serde_json",
  "tokio",
  "windows-sys 0.61.2",
 ]

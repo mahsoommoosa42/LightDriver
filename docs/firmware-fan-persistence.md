@@ -133,7 +133,7 @@ The standalone [Firmware fan lab](../crates/fan-debug/README.md) shares the fixe
 
 Write/readback and restore controls are disabled by construction. The current milestone implements Moosa's selected **continue decoding before enabling writes** route.
 
-Optional live RPM uses a separate read-only PawnIO tachometer adapter, not the UEFI store. Driver installation and physical RPM/channel validation remain outstanding. The firmware-buffer data is never used as a fabricated live-speed reading.
+Optional live RPM uses a separate read-only PawnIO tachometer adapter, not the UEFI store. After installation, the signed driver and an elevated getter returned changing nonzero RPM from the reference board's IT8688 revision 1; physical header mapping and independent accuracy remain outstanding. The firmware-buffer data is never used as a fabricated live-speed reading.
 
 ## Meaning of persistence
 

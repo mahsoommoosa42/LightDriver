@@ -22,7 +22,7 @@ The module must be exactly 18,076 bytes, SHA256 **B3896A1CAB0D808FCA31FE2EBCAE04
 
 Close competing motherboard tools such as SIV while testing. Right-click FanDebug.cmd and choose **Run as administrator** if driver access is denied. Click **Start RPM monitor**. It polls once per second asynchronously, with one sample in flight, a stop action, source/chip information, per-channel status and sample age. Samples over three seconds old display as stale. Errors clear the previous readings and stop the monitor; restart explicitly after fixing the cause. Late results from stopped/replaced sessions cannot become current.
 
-Initial recognition requires **X570 AORUS ELITE WIFI + IT8688 revision 2**, active hardware monitoring, plausible I/O base and matching monitor vendor identity. Similar board names and unknown chips do not inherit support. Channel names are research-derived labels **pending physical confirmation**:
+Initial recognition requires **X570 AORUS ELITE WIFI + IT8688 revision 1 or 2**, active hardware monitoring, plausible I/O base and matching monitor vendor identity. Similar board names and unknown chips do not inherit support. Channel names are research-derived labels **pending physical confirmation**:
 
 | Chip channel | Proposed board label |
 | --- | --- |
@@ -32,11 +32,24 @@ Initial recognition requires **X570 AORUS ELITE WIFI + IT8688 revision 2**, acti
 | 4 | PCH_FAN |
 | 5 | CPU_OPT |
 
-Live RPM uses a separate tachometer path from the UEFI store. Disabled tachometers and unsupported 8-bit modes remain unchanged and show unavailable. A zero counter is invalid; 0xFFFF means no tach pulses and is shown as 0 RPM, which cannot distinguish a stopped fan from a disconnected tach wire. A passive hub usually forwards one fan's tach signal; this is not individual monitoring of every fan connected to the hub.
+Live RPM uses a separate tachometer path from the UEFI store. Disabled tachometers remain unchanged and show unavailable. IT8688 uses fixed 16-bit tachometers; older ITE mode-switch bits are not applied to it. A zero counter is invalid; 0xFFFF means no tach pulses and is shown as 0 RPM, which cannot distinguish a stopped fan from a disconnected tach wire. A passive hub usually forwards one fan's tach signal; this is not individual monitoring of every fan connected to the hub.
 
 The reader acquires the shared global ISA mutex, enters/exits Super I/O configuration mode, selects logical devices, and writes register **selectors** required for reads. The official module enumerates BARs through logical-device selection; the original selection is restored on success and failure. It never writes PWM duty, fan mode, tach enable, thresholds, curves or the EC data port. Nonzero bank selection is rejected rather than changed. This is read-only with respect to fan settings; it is not zero port-output traffic. The mutex cannot coordinate firmware or tools which ignore it. No general-purpose port API is exposed to the UI.
 
-The code builds and its conversion, identity, module-hash and session-state tests pass. **Physical RPM validation remains pending:** PawnIO was absent during development, so real tachometers and proposed header mapping have not yet been verified.
+The code builds and its conversion, identity, module-hash and session-state tests pass. **Live read path observed on 10 October 2026:** signed PawnIO 2.2.0 and IT8688 revision 1 at I/O base 0x0A40 returned three changing nonzero RPM readings and two no-pulse readings over three samples. Normal-token access was denied; the elevated getter succeeded. Physical header/fan wiring and independent RPM accuracy remain unverified. Revision 2 has reference-source coverage but no live validation here.
+
+## Bounded support check
+
+The same RPM reader can run without opening the GUI or reading firmware. Request 1–5 samples; the default is three, separated by one second. It stops on the first error. A requested report uses create-new semantics and never replaces an existing file. It contains decoded RPM/status and source information, no raw firmware/port dump or identifying serials.
+
+```powershell
+# Run from an elevated PowerShell for real readings; create .data first.
+Start-Process -Wait -FilePath .\target\release\lightdriver-fan-debug.exe `
+  -ArgumentList '--rpm-check','--samples','3','--output','.data\rpm-check.json'
+# Add --demo for synthetic readings without hardware access.
+```
+
+An explicit --output writes a local report. Without it the check writes JSON to inherited stdout. This Windows GUI executable must be waited on (for example with Start-Process -Wait) before reading its output file. Neither the check nor normal launch requests elevation automatically.
 
 ## Firmware inspection and percentage previews
 

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 //! Standalone firmware preview and independent read-only tachometer monitor.
 mod rpm;
+mod rpm_check;
 use iced::{
     Border, Color, Element, Font, Length, Subscription, Task, Theme,
     widget::{button, column, container, pick_list, row, scrollable, slider, text},
@@ -625,6 +626,16 @@ fn save_capture(path: &std::path::Path, screenshot: window::Screenshot) -> Resul
         .map_err(|e| e.to_string())
 }
 fn main() -> iced::Result {
+    let check_args: Vec<_> = std::env::args_os().skip(1).collect();
+    if check_args.iter().any(|v| v == "--rpm-check") {
+        match rpm_check::run(&check_args) {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(2);
+            }
+        }
+    }
     let args: Vec<_> = std::env::args().collect();
     let size = args
         .windows(2)

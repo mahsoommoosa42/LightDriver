@@ -59,14 +59,17 @@ fn decode(channel: usize, main: u8, mode: u8, count: u16) -> (Option<u32>, &'sta
     if !enabled {
         return (None, "Tachometer disabled; left unchanged");
     }
-    if channel < 3 && mode & (1 << channel) == 0 {
-        return (None, "8-bit tachometer mode is unsupported; left unchanged");
-    }
+    // IT8688 has fixed 16-bit tachometers. Register 0x0C low bits are not
+    // an 8/16-bit mode switch for this chip (unlike older ITE models).
     match count {
         0 => (None, "Invalid tachometer count"),
         0xffff => (Some(0), "No tach pulses / stopped or disconnected"),
         _ => (Some(675_000 / u32::from(count)), "Live tachometer"),
     }
+}
+#[cfg(any(windows, test))]
+fn supported_chip(id: u16, revision: u8) -> bool {
+    id == 0x8688 && matches!(revision, 1 | 2)
 }
 #[cfg(any(windows, test))]
 fn supported_board(manufacturer: &str, product: &str) -> bool {
@@ -77,15 +80,25 @@ fn supported_board(manufacturer: &str, product: &str) -> bool {
 mod tests {
     use super::*;
     #[test]
-    fn sentinels_modes_and_channel_enable_bits_are_distinct() {
+    fn fixed_16bit_counters_sentinels_and_enable_bits_are_distinct() {
         assert_eq!(decode(1, 0x70, 7, 750), (Some(900), "Live tachometer"));
         assert_eq!(decode(0, 0x70, 7, 0).0, None);
         assert_eq!(decode(0, 0x70, 7, 0xffff).0, Some(0));
         assert_eq!(decode(2, 0x30, 7, 750).0, None); // disabled fan3
-        assert_eq!(decode(1, 0x70, 5, 750).0, None); // 8-bit fan2
+        assert_eq!(decode(1, 0x70, 0, 750).0, Some(900)); // fixed 16-bit fan2
         assert_eq!(decode(3, 0, 0x10, 750).0, Some(900));
         assert_eq!(decode(4, 0, 0x20, 750).0, Some(900));
         assert_eq!(decode(5, 0x70, 0xff, 750).0, None); // unmapped
+    }
+    #[test]
+    fn only_reviewed_ite_revisions_are_accepted() {
+        assert!(supported_chip(0x8688, 1));
+        assert!(supported_chip(0x8688, 2));
+        for revision in [0, 3, 15, 255] {
+            assert!(!supported_chip(0x8688, revision));
+        }
+        assert!(!supported_chip(0x8689, 1));
+        assert!(!supported_chip(0xffff, 1));
     }
     #[test]
     fn similar_board_names_do_not_inherit_header_mapping() {

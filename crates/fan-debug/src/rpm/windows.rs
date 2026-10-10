@@ -1,6 +1,6 @@
 //! Independent Rust implementation of PawnIO's documented device IOCTL interface.
 //! Uses an external, hash-pinned official signed LpcIO module. No DLL search path.
-use super::{Reading, Snapshot, decode, supported_board};
+use super::{Reading, Snapshot, decode, supported_board, supported_chip};
 use std::{ffi::c_void, path::PathBuf, ptr, time::Instant};
 use windows_sys::Win32::{
     Foundation::{
@@ -256,9 +256,9 @@ fn read_slot(device: &Device, slot: u64) -> Result<Option<Snapshot>, String> {
             return Ok(None);
         }
         let revision = device.sio_read(0x22)? & 0x0f;
-        if revision != 2 {
+        if !supported_chip(id, revision) {
             return Err(format!(
-                "IT8688 revision {revision} is not validated for this monitor."
+                "IT8688 revision {revision} is unsupported by this monitor."
             ));
         }
         device.select_ldn(4)?;
@@ -339,7 +339,7 @@ pub fn sample() -> Result<Snapshot, String> {
     let product = registry("BaseBoardProduct")?;
     if !supported_board(&manufacturer, &product) {
         return Err(format!(
-            "No verified motherboard RPM adapter for {product}. No ports were accessed."
+            "No recognized motherboard RPM adapter for {product}. No ports were accessed."
         ));
     }
     let device = Device::open()?;
@@ -352,7 +352,7 @@ pub fn sample() -> Result<Snapshot, String> {
             return Ok(snapshot);
         }
     }
-    Err("Recognized motherboard, but no supported IT8688 revision 2 chip was found.".into())
+    Err("Recognized motherboard, but no supported IT8688 chip was found.".into())
 }
 
 #[cfg(test)]
