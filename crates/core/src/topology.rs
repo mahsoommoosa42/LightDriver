@@ -16,7 +16,6 @@ pub struct PhysicalCore {
     pub cluster: Option<u16>,
     pub efficiency_class: u8,
     pub threads: Vec<CpuThread>,
-    pub temperature: Option<f32>,
     pub clock_mhz: Option<f32>,
 }
 impl PhysicalCore {
@@ -74,7 +73,6 @@ mod tests {
                     load: None,
                 },
             ],
-            temperature: None,
             clock_mhz: None,
         };
         assert_eq!(core.load(), None);

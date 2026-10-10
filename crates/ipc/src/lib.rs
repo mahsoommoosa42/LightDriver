@@ -204,7 +204,6 @@ mod tests {
                             load: Some(99.99999),
                         })
                         .collect(),
-                    temperature: Some(99.99999),
                     clock_mhz: Some(9999.999),
                 })
                 .collect(),

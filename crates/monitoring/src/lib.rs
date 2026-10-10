@@ -414,7 +414,6 @@ fn demo_topology(ticks: u64) -> lightdriver_core::CpuTopology {
                         }
                     })
                     .collect(),
-                temperature: Some(50.0 + load * 0.15),
                 clock_mhz: Some(4500.0 + load * 3.0),
             }
         })
@@ -430,7 +429,7 @@ fn demo_topology(ticks: u64) -> lightdriver_core::CpuTopology {
         total_cores: count,
         total_threads: count * 2,
         sampled_at_ms: now_ms(),
-        detail: "Simulated shared-L3 clusters and per-core temperatures".into(),
+        detail: "Simulated shared-L3 clusters, loads and clocks".into(),
     }
 }
 

@@ -2,7 +2,7 @@
 
 Diagnostics is a single native view for **CPU and GPU load, temperature and clock speed**. CPU and GPU load use cached radial bars. Missing readings show a neutral track and a dash; valid zero remains 0%. Power, memory and cooling measurements can remain in diagnostic exports, but are not summary cards in this view.
 
-**Show cores** expands a responsive CPU diagram. Each tile represents one physical core, with a separate load bar for each SMT thread, temperature when available, and the OS reported clock. Rows adapt to the available width; large diagrams scroll vertically.
+**Show cores** expands a responsive CPU diagram. Each tile represents one physical core, with a separate load bar for each SMT thread and the OS reported clock. Rows adapt to the available width; large diagrams scroll vertically.
 
 ## CPU topology
 
@@ -10,7 +10,7 @@ The service reads Windows `GetLogicalProcessorInformationEx` relationships. Tile
 
 Thread addresses contain both processor group and processor number. Load and frequency use language-neutral Windows **Processor Information** counters, including systems with more than 64 logical processors. A physical core's load is the mean of its measured SMT thread loads; an incomplete set of thread samples has no aggregate. Rate counters require two valid samples. The diagram is bounded to 256 physical cores and 512 threads; any truncation is explicit. Static topology is refreshed on service restart; live CPU hotplug has not been validated.
 
-Per-core temperatures require a validated mapping between vendor sensor identities and OS physical cores. This mapping is currently pending. Live tiles therefore show a dash for temperature; the CPU card can independently show measured package temperature. Package temperature is never copied to individual cores. Demo temperatures and topology are explicitly simulated.
+Temperature appears at CPU package level only. Individual-core temperatures are outside the current scope because reliable vendor-to-core sensor mapping is not established. Core tiles focus on measured load, SMT threads and reported clock. Demo readings and topology are explicitly simulated.
 
 ## AMD CPU sensors
 
@@ -27,11 +27,11 @@ The runtime is discovered through an explicit absolute `LIGHTDRIVER_AMD_CPU_SDK_
 | Provider | Implemented readings | Validation |
 | --- | --- | --- |
 | Windows performance counters / topology | Aggregate load, physical cores, SMT loads, reported clocks, sockets, shared L3 and efficiency classes | Live reference topology/read paths observed; synthetic multi-group, SMT and hybrid fixtures |
-| AMD Ryzen Master Monitoring SDK | CPU package temperature, fastest active-core clock, PPT power | Live elevated read paths observed; per-core identity mapping pending |
+| AMD Ryzen Master Monitoring SDK | CPU package temperature, fastest active-core clock, PPT power | Live elevated read paths observed |
 | AMD ADLX | GPU temperature/hotspot, load, board/chip power, fan RPM, clocks and used memory | Live temperature/load/board-power read paths observed; broader coverage pending |
 | NVIDIA NVML | GPU temperature, device power, load, memory, clocks and fan percentage | Rust adapter implemented; physical validation pending |
 | Intel Level Zero Sysman | GPU temperature domains, root-card average power, combined-engine load and GPU frequency | Rust adapter and x64 layout checks implemented; physical validation pending |
-| Intel CPU vendor SDK | Package/core temperature | Adapter pending; Windows load/topology/reported clocks remain usable |
+| Intel CPU vendor SDK | Package temperature | Adapter pending; Windows load/topology/reported clocks remain usable |
 | Kraken X3 HID | Coolant temperature, pump RPM and duty | Read-only reference X53 telemetry observed |
 | Motherboard fan sensors | Radiator / case RPM | Adapter pending |
 

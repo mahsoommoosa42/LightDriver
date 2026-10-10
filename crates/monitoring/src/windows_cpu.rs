@@ -147,7 +147,6 @@ fn parse(bytes: &[u8]) -> Result<CpuTopology, String> {
                     load: None,
                 })
                 .collect(),
-            temperature: None,
             clock_mhz: None,
         })
         .collect();
@@ -161,7 +160,7 @@ fn parse(bytes: &[u8]) -> Result<CpuTopology, String> {
         })
         .collect();
     let detail = format!(
-        "Windows physical-core / shared-L3 topology. Per-core temperatures await validated vendor-to-OS identity mapping.{}",
+        "Windows physical-core / shared-L3 topology.{}",
         if cores.len() < total_cores {
             " Display limited to 256 physical cores / 512 threads."
         } else {

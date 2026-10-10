@@ -39,7 +39,7 @@ AMD ADLX returned GPU temperature/load/power; Windows topology and performance c
 
 ## Remaining limits
 
-- Live per-core temperature identity mapping is pending. Package temperature is not copied into core tiles.
+- Individual-core temperature was removed from scope. The CPU card retains measured package temperature; core tiles show load and reported clock.
 - Intel CPU temperature integration and physical NVIDIA/Intel GPU validation remain pending.
 - Multi-group and hybrid CPU layouts are covered by synthetic tests; physical hardware validation and CPU hotplug remain pending.
 - UAC cancellation recovery is covered by UI state logic; broader Windows account/session configurations and clean-machine deployment remain unverified.

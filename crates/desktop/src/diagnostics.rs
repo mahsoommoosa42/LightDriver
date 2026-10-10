@@ -295,28 +295,13 @@ impl Workbench {
 fn core_tile(core: &PhysicalCore, current: bool, hybrid: bool) -> Element<'_, Message> {
     let load = current.then(|| core.load()).flatten();
     let mut tile = column![
-        row![
-            heading(format!("Core {:02}", core.id + 1), 12),
-            Space::new().width(Fill),
-            text(
-                load.map(|v| format!("{v:.0}%"))
-                    .unwrap_or_else(|| "—".into())
-            )
-            .size(12)
-            .color(style::ACCENT)
-        ]
-        .spacing(5),
+        heading(format!("Core {:02}", core.id + 1), 12),
         text(
-            if current {
-                core.temperature
-                    .filter(|v| Unit::Celsius.accepts(f64::from(*v)))
-                    .map(|v| format!("{v:.1} °C"))
-            } else {
-                None
-            }
-            .unwrap_or_else(|| "— °C".into())
+            load.map(|v| format!("{v:.0}%"))
+                .unwrap_or_else(|| "—".into())
         )
-        .size(17),
+        .size(20)
+        .color(style::ACCENT),
         label(
             if current {
                 core.clock_mhz

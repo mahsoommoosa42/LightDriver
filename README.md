@@ -142,7 +142,7 @@ The JSON records redraw-request intervals after a two-second warmup, not mouse-t
 
 ## System diagnostics
 
-The Diagnostics tab focuses on CPU/GPU load, temperature and clock speed. Cached radial bars show load; Show cores expands physical-core tiles with SMT bars, OS clocks and shared-L3 grouping for CCX-like layouts. AMD CPU package temperature uses an optional installed vendor SDK through the local Rust service; Enable CPU sensors requests Windows UAC while keeping the UI at normal permissions. Per-core temperature identity mapping and Intel CPU temperature integration remain pending. GPU adapters cover AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed APIs. See [coverage and semantics](docs/diagnostics.md).
+The Diagnostics tab focuses on CPU/GPU load, temperature and clock speed. Cached radial bars show load; Show cores expands physical-core tiles with SMT bars, OS clocks and shared-L3 grouping for CCX-like layouts. AMD CPU package temperature uses an optional installed vendor SDK through the local Rust service; Enable CPU sensors requests Windows UAC while keeping the UI at normal permissions. Per-core tiles show load and reported clock. Intel CPU package temperature integration remains pending. GPU adapters cover AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed APIs. See [coverage and semantics](docs/diagnostics.md).
 
 After updating from an older build, restart the local service: snapshot protocol version 3 includes CPU topology and the explicit sensor-service handoff. Windows CI builds an optimized portable app artifact containing both executables and the launcher.
 
