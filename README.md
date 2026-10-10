@@ -2,7 +2,7 @@
 
 A native Rust workbench for understanding, controlling, and verifying PC cooling and lighting. The desktop uses **Iced**; an independent local Rust service owns device access.
 
-**Early development: the current milestone is read-only.** Pump curves and lighting are local drafts/previews. Hardware application, motherboard fan control, and case ARGB control are still pending.
+**Early development: device control is explicit and physical write validation is pending.** Monitoring starts without setting changes. Enable control, then Apply a validated pump curve or lighting effect. Demo exercises the same command path without opening hardware. See [control behavior and limits](docs/control.md).
 
 ![Native Iced Workbench with simulated telemetry](docs/workbench.png)
 
@@ -12,16 +12,19 @@ The screenshot is the running native application in demo mode. See the [verifica
 
 | Path | Current behavior |
 | --- | --- |
-| NZXT Kraken X3 USB HID (X53 target) | Discovery and read-only coolant temperature, pump RPM, and pump duty |
-| Kraken pump curve | Editable example curves; validated local drafts; device application disabled |
-| Kraken ring and logo | Static local preview; device lighting writes pending |
-| Radiator fans | Motherboard path; the X53 does not expose fan speed control |
-| Lian Li LANCOOL 216 stock hub | Reference wiring only; motherboard PWM/ARGB adapters pending |
-| Verification | Current connection/telemetry evidence and shareable diagnostics; untested controls stay pending |
+| NZXT Kraken X3 USB HID | Discovery, coolant temperature, pump RPM/duty; explicit control enable |
+| Kraken pump curve | Editable coolant curves stored on the device; explicit 100% pump action |
+| Kraken ring and logo | Separate or combined static, breathing, spectrum and off effects |
+| Radiator / case fans | BIOS fan control initially; the X53 does not expose fan speed control |
+| Recognized GIGABYTE ITE 8297 boards | Rust HID adapter for D_LED1/D_LED2 native effects; no vendor SDK required |
+| Passive PWM/ARGB hubs, including LANCOOL 216 | User-assigned motherboard header; group lighting, with no independent per-fan assumption |
+| Profiles / Setup | Named local profiles, validated import/export, per-user wiring |
+| Live logging | Error/Warning/Info/Debug/Verbose, system context, filter/pause/follow and local JSON export; raw packets only in Verbose |
+| Verification | Command receipts and local self-reported hardware test reports; writes remain physically unverified |
 
 X53, X63, and X73 share a USB identity, so discovery identifies the **Kraken X3 family**, rather than claiming to distinguish the radiator model. Both known X3 product IDs are recognized; support beyond the reference X53 needs hardware testing.
 
-The stock case hub is a PWM/ARGB distribution path. Independent per-fan speed or RPM control is not assumed. The reference build records a Gigabyte X570 AORUS ELITE WIFI, CPU_FAN for radiator fans, and SYS_FAN1 for the case hub. The exact ARGB header still needs confirmation. This is recorded wiring, not motherboard auto-detection.
+The motherboard name is discovered from Windows inventory. RGB control also checks the USB vendor/product ID, HID usage, known board layout and controller identity. Initial ITE 8297 layouts cover X570 AORUS ELITE, ELITE WIFI, PRO, PRO WIFI and ULTRA. Other boards need a documented adapter/layout; they do not receive guessed commands. Header assignments have no global defaults and are tied to the user's detected board identity.
 
 ## Run on Windows
 
@@ -34,7 +37,7 @@ cargo build --workspace --release --locked
 
 Double-click `LightDriver.cmd` for the optimized app. The footer shows the active renderer and build profile. Debug builds are intended for development, not responsiveness assessment.
 
-Omit `--demo` for live read-only discovery:
+Omit `--demo` for live monitoring:
 
 ```powershell
 .\target\release\lightdriver-desktop.exe
@@ -64,7 +67,7 @@ Drafts and exported reports are saved under `%LOCALAPPDATA%\LightDriver`. Use `-
 .\target\release\lightdriver-service.exe --demo --once
 ```
 
-The read-only adapter does not initialize the Kraken or send USB commands. A detected device may therefore have no active telemetry stream. Read/open errors are surfaced without changing device settings or stopping another controller. Samples older than five seconds are not displayed as live readings.
+Polling does not initialize devices or send setting commands. Enable Kraken control explicitly initializes its status stream; Enable RGB control queries the ITE identity without resetting its lighting. Applying settings is a separate action. Read/open errors are surfaced without stopping another controller. Samples older than five seconds are hidden as live readings.
 
 ## Architecture
 
@@ -80,14 +83,14 @@ Iced desktop ── bounded, versioned local IPC ── Rust service
 | --- | --- |
 | `lightdriver-core` | Device/capability models, telemetry freshness, curve/draft validation |
 | `lightdriver-ipc` | Versioned length-prefixed JSON over local sockets; Windows named pipes; bounded frames/timeouts |
-| `lightdriver-devices` | Read-only Windows Kraken HID adapter and isolated demo adapter |
+| `lightdriver-devices` | Windows Kraken / ITE HID adapters and isolated demo adapter |
 | `lightdriver-monitoring` | Read-only CPU topology/load/clocks, optional AMD CPU SDK and AMD/NVIDIA/Intel GPU collectors |
-| `lightdriver-service` | Single owner per user/mode, polling and local snapshot requests |
-| `lightdriver-desktop` | Native Workbench, local draft editing, capability evidence, diagnostic export |
+| `lightdriver-service` | Single owner per user/mode, serialized polling/commands and bounded receipt cache |
+| `lightdriver-desktop` | Native Workbench, explicit Apply, profiles, wiring and evidence export |
 
-All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The local API contains snapshot requests and an explicit handoff that only ordinary live services accept when enabling CPU sensors. Future control commands belong in the service, alongside validation and device-specific capability checks.
+All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The local API contains snapshots, typed device commands, separate bounded log batches and the explicit CPU-sensor handoff. The service validates mode, device, capability, payload and deadline. It serializes commands with polling, retains duplicate receipts for the full request deadline, and never retries unknown hardware outcomes.
 
-The initial service is a **per-user background process**, not a privileged Windows Service. Remote control, privileged motherboard drivers, automatic startup, and installer distribution need separate design decisions. Windows IPC grants access to the current account, administrators and SYSTEM, with remote pipe clients disabled. CPU sensor elevation is an explicit per-session action. Control-command authorization must be designed before enabling hardware writes or remote access.
+The initial service is a **per-user background process**, not a privileged Windows Service. Remote control, privileged motherboard drivers, automatic startup, and installer distribution need separate design decisions. Windows IPC grants access to the current account, administrators and SYSTEM, with remote pipe clients disabled. CPU sensor elevation is an explicit per-session action. Hardware control is explicitly enabled per connected device; saved profiles never apply automatically. Remote control requires a separate authorization design.
 
 ## Development
 
@@ -97,7 +100,7 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-Windows CI runs these checks and builds both executables. Tests cover wire decoding and faults, telemetry freshness, curve constraints, draft replacement, demo isolation, bounded IPC, service lifecycle, and UI disconnect states. Tests use synthetic data and do not open hardware. Live hardware support currently targets Windows; other platforms can use the demo adapter but have not been validated.
+Windows CI runs these checks and builds both executables. Tests cover wire packets/faults, ITE identity/header masks, telemetry freshness, curve constraints, profile import/replacement, wiring identity, demo isolation, bounded IPC, duplicate/expired commands, real service command lifecycle and UI guards. Tests use synthetic data and do not open hardware. Live hardware support currently targets Windows; other platforms can use the demo adapter but have not been validated.
 
 Native rendering can be captured for review:
 
@@ -106,16 +109,24 @@ Native rendering can be captured for review:
 .\target\release\lightdriver-desktop.exe --demo --tab lighting --capture .data\lighting.png
 ```
 
-`--tab` also accepts `capabilities`, `verification` and `diagnostics`. Use `--cores` to expand the physical-core diagram in Diagnostics. The app captures its native window after three seconds and exits; the independent service remains running.
+`--tab` also accepts `capabilities`, `verification`, `diagnostics`, `setup` and `logs`. Use `--cores` to expand the physical-core diagram in Diagnostics. The app captures its native window after three seconds and exits; the independent service remains running.
 
-For rendering checks, `--size 980x720` selects the minimum supported window size, `--device motherboard` selects the recorded board target, and `--no-autostart` prevents the initial connection attempt from launching a service.
+For rendering checks, `--size 980x720` selects the minimum supported window size, `--device motherboard` selects the discovered motherboard, and `--no-autostart` prevents the initial connection attempt from launching a service.
+
+## Live logs and tester reports
+
+The **Live logs** sidebar opens an in-app stream with **Error, Warning, Info, Debug and Verbose** levels. Info includes system configuration and adapter status. Verbose alone collects and displays raw incoming HID bytes and decoded sensor samples; reducing verbosity removes retained raw entries. The stream supports search, pause/resume and following.
+
+**Export log** saves a new local JSON report with retained entries, OS/app details, CPU/GPU identities, topology, memory, motherboard/controllers, sensor adapters, renderer and saved wiring. Nothing is uploaded automatically. The service uses a bounded memory buffer and separate IPC log batches to keep telemetry/rendering work independent. See [logging behavior and report contents](docs/logging.md).
+
+![Live logs with simulated incoming packets](docs/logs.png)
 
 ## Next milestones
 
-1. Validate Kraken telemetry and device lifecycle on the reference X53.
-2. Design and measure pump/RGB command behavior, conflict handling, and recovery before enabling Apply.
-3. Confirm case wiring and choose the motherboard PWM/ARGB integration approach.
-4. Add opt-in hardware test reports so support labels reflect measured evidence.
+1. Physically validate pump response, ring/logo and ARGB effects, competing controllers, unplug/reconnect and sleep/power-cycle behavior.
+2. Expand documented device layouts and vendor adapters using tester reports.
+3. Add Intel CPU package temperature through a supported vendor path.
+4. Decide privileged service installation, startup and remote access separately.
 
 ## Protocol references
 
@@ -144,7 +155,7 @@ The JSON records redraw-request intervals after a two-second warmup, not mouse-t
 
 The Diagnostics tab focuses on CPU/GPU load, temperature and clock speed. Cached radial bars show load; Show cores expands physical-core tiles with SMT bars, OS clocks and shared-L3 grouping for CCX-like layouts. AMD CPU package temperature uses an optional installed vendor SDK through the local Rust service; Enable CPU sensors requests Windows UAC while keeping the UI at normal permissions. Per-core tiles show load and reported clock. Intel CPU package temperature integration remains pending. GPU adapters cover AMD ADLX, NVIDIA NVML and Intel Level Zero Sysman, subject to installed APIs. See [coverage and semantics](docs/diagnostics.md).
 
-After updating from an older build, restart the local service: snapshot protocol version 3 includes CPU topology and the explicit sensor-service handoff. Windows CI builds an optimized portable app artifact containing both executables and the launcher.
+After updating from an older build, restart the local service: protocol version 5 includes typed commands, control capabilities, receipts and bounded logging. Windows CI builds an optimized portable app artifact containing both executables and the launcher.
 
 ![Diagnostics with simulated CPU and GPU readings](docs/diagnostics-basic.png)
 

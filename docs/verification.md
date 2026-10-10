@@ -6,7 +6,7 @@ Updated on 10 October 2026, Windows x64, Rust 1.99.0.
 
 - The complete Cargo workspace builds in release mode.
 - Formatting and workspace Clippy with `-D warnings` pass.
-- 26 automated tests pass, including actual demo service/named-pipe lifecycle tests.
+- 47 automated tests pass, including actual demo service/named-pipe lifecycle tests.
 - A second service cannot claim the same per-user/mode endpoint. Live clients cannot receive demo data.
 - The CPU-sensor handoff policy denies demo and elevated processes. An actual demo IPC request is rejected without stopping its service.
 - The account-specific Windows security descriptor is validated. Native verification confirms the ordinary UI can connect after UAC starts the elevated service.
@@ -16,14 +16,19 @@ Updated on 10 October 2026, Windows x64, Rust 1.99.0.
 - AMD CPU MSVC x64 structures and virtual dispatch were checked against SDK 3.1.1.5478 headers/compiler layouts. Synthetic dispatch tests cover 1 Hz throttling, original timestamps, missing output fields and failures.
 - Intel x64 ABI layouts, frequency structures and energy/activity counter semantics are checked with synthetic data.
 - Demo never initializes system/vendor collectors or opens hardware. Invalid draft saves preserve the previous file.
+- Real demo IPC commands cover explicit enable, curve/lighting submission, independent motherboard headers, release, unknown targets/channels, and duplicate identifiers. Synthetic tests cover expiry/cancellation/cache saturation, exact header commit masks and ITE identity-report quirks.
+- Logging tests verify raw capture is Verbose-only, raw removal on downgrade, bounded retention/cursors/UTF-8 and escaped frame size, UI queued level changes/stale session responses, real demo IPC level switching, and actual local report export. System context accompanies bounded log batches; no file is saved without export.
+- Profile import/export, legacy lighting defaults, user wiring identity and the explicit full-pump guard are validated. No header is assumed on a fresh install.
 
 The earlier [Windows diagnostics CI run](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37967280323) and [radial-load CI run](https://github.com/mahsoommoosa42/LightDriver/actions/runs/37968772415) passed checks, release compilation and portable packaging. Portable artifacts include both executables and the launcher. These runs predate the CPU SDK/topology update; its latest validation is recorded in the repository's Actions tab.
 
 ## Native UI and performance
 
-The running release Iced application was captured and inspected. Diagnostics now contains CPU/GPU radial load, temperature and clock cards with a physical-core toggle. Core tiles show separate SMT bars and shared-L3 groups; rows adapt to the window width. Simulated 8-, 16-, 24- and 64-core layouts were captured; the 8-core layout was checked at the minimum 980 × 720. Longer diagrams scroll vertically. Captures confirmed Vulkan GPU rendering.
+The running release Iced application was captured and inspected. Diagnostics now contains CPU/GPU radial load, temperature and clock cards with a physical-core toggle. Core tiles show separate SMT bars and shared-L3 groups; rows adapt to the window width. Simulated 8-, 16-, 24- and 64-core layouts were captured; the 8-core layout was checked at the minimum 980 × 720. Longer diagrams scroll vertically. Captures confirmed Vulkan GPU rendering. The pump, ring/logo, case-lighting and Setup screens were also captured at normal and minimum window sizes; longer content scrolls vertically. Live logs were captured at Info and Verbose, with system configuration expanded, and at the minimum window size.
 
 The images below use simulated data. Live sensor captures remain private.
+
+![Live logs with simulated packet data](logs.png)
 
 ![CPU/GPU Diagnostics](diagnostics-basic.png)
 
@@ -43,8 +48,10 @@ AMD ADLX returned GPU temperature/load/power; Windows topology and performance c
 - Intel CPU temperature integration and physical NVIDIA/Intel GPU validation remain pending.
 - Multi-group and hybrid CPU layouts are covered by synthetic tests; physical hardware validation and CPU hotplug remain pending.
 - UAC cancellation recovery is covered by UI state logic; broader Windows account/session configurations and clean-machine deployment remain unverified.
-- Pump/RGB writes, measured response, stored profiles, conflict handling and power-cycle recovery remain pending.
-- Motherboard PWM/ARGB integration and final case ARGB wiring remain pending.
+- Pump/ring/logo and ITE 8297 header command implementations are present, with physical measured-response, competing-controller, sleep and power-cycle tests still pending. USB submission is not a hardware-verification claim.
+- Board inventory and recognized USB-controller discovery have been observed with control disabled. The ITE identity query and setting commands have not been exercised on live hardware.
+- Named local profiles and per-user header assignments are implemented. Stored-device readback and automatic restoration remain unavailable.
+- Motherboard fan control remains in BIOS by design. Broader vendor/board/controller support requires documented adapters and layouts.
 - Privileged Windows Service installation, startup automation and remote access are separate future architecture decisions.
 
 Hardware support should be assessed per capability as testing becomes available.

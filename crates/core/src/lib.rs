@@ -1,9 +1,13 @@
 //! Models shared by the service, device adapters, and native application.
+mod control;
+pub use control::*;
 mod diagnostics;
 mod topology;
 pub use diagnostics::*;
 pub use topology::*;
-pub const PROTOCOL_VERSION: u16 = 3;
+mod logging;
+pub use logging::*;
+pub const PROTOCOL_VERSION: u16 = 5;
 pub const STALE_AFTER_MS: u64 = 5_000;
 pub const HISTORY_LIMIT: usize = 60;
 
@@ -96,13 +100,15 @@ pub struct Device {
     pub capabilities: Vec<Capability>,
     pub telemetry: Option<Telemetry>,
     pub history: Vec<Telemetry>,
+    #[serde(default)]
+    pub control: ControlState,
 }
 
 pub fn kraken_target() -> Device {
     Device {
         id: "kraken-x3".into(),
         name: "NZXT Kraken X3".into(),
-        connection: "USB HID · X53 target".into(),
+        connection: "USB HID · X3 family".into(),
         status: DeviceStatus::Disconnected,
         detail: "Waiting for a Kraken X3 USB device. X53, X63 and X73 share this USB identity."
             .into(),
@@ -114,18 +120,18 @@ pub fn kraken_target() -> Device {
             },
             Capability {
                 name: "Coolant-based pump curve".into(),
-                support: Support::Planned,
-                detail: "Local drafts only. Hardware application awaits validation.".into(),
+                support: Support::Implemented,
+                detail: "Validated coolant curves execute on the device after explicit control is enabled. Physical write validation is pending.".into(),
             },
             Capability {
                 name: "Ring + logo lighting".into(),
-                support: Support::Planned,
-                detail: "Local preview only. USB lighting writes are not implemented.".into(),
+                support: Support::Implemented,
+                detail: "Separate ring/logo channels: static, breathing, spectrum and off. Physical write validation is pending.".into(),
             },
             Capability {
                 name: "Radiator fan control".into(),
                 support: Support::External,
-                detail: "The X53 does not expose fan control. Your radiator group uses CPU_FAN."
+                detail: "The X53 does not expose fan control. Configure the motherboard headers actually used by your build."
                     .into(),
             },
             Capability {
@@ -135,20 +141,31 @@ pub fn kraken_target() -> Device {
             },
         ],
         telemetry: None,
-        history: vec![],
+        history: vec![], control: ControlState::default(),
+    }
+}
+
+pub fn inventory_target() -> Device {
+    Device {
+        id: "inventory".into(),
+        name: "USB controllers".into(),
+        connection: "Device inventory".into(),
+        status: DeviceStatus::Disconnected,
+        detail: "No supported USB controller is connected. Supported controllers appear automatically; motherboard connections are configured separately.".into(),
+        capabilities: vec![], telemetry: None, history: vec![],
+        control: ControlState::default(),
     }
 }
 
 pub fn motherboard_target() -> Device {
     Device {
-        id: "motherboard".into(), name: "X570 AORUS ELITE WIFI".into(), connection: "Recorded build · not auto-detected".into(),
+        id: "motherboard".into(), name: "Motherboard".into(), connection: "Hardware discovery".into(),
         status: DeviceStatus::AdapterNeeded,
-        detail: "Recorded wiring: CPU_FAN → radiator fans; SYS_FAN1 → LANCOOL 216 hub. ARGB connection needs confirmation. BIOS keeps its current fan settings.".into(),
+        detail: "Fan curves use BIOS. Assign passive PWM/ARGB hubs to the appropriate motherboard headers in your local wiring configuration.".into(),
         capabilities: vec![
-            Capability { name: "CPU_FAN radiator group".into(), support: Support::Planned, detail: "Motherboard PWM adapter and measurements needed.".into() },
-            Capability { name: "SYS_FAN1 case fan group".into(), support: Support::Planned, detail: "The stock hub shares PWM; independent fan control/RPM is not assumed.".into() },
-            Capability { name: "5 V ARGB case lighting".into(), support: Support::Planned, detail: "Motherboard RGB adapter and actual wiring validation needed.".into() },
-        ], telemetry: None, history: vec![],
+            Capability { name: "Motherboard fan groups".into(), support: Support::External, detail: "BIOS fan control in this version; a vendor-specific PWM backend can be added independently.".into() },
+            Capability { name: "Motherboard ARGB".into(), support: Support::Planned, detail: "Requires a compatible vendor SDK and enumerated channels. Unknown boards/headers are never probed with guessed writes.".into() },
+        ], telemetry: None, history: vec![], control: ControlState::default(),
     }
 }
 
@@ -160,6 +177,8 @@ pub struct Snapshot {
     pub generated_at_ms: u64,
     pub devices: Vec<Device>,
     pub diagnostics: Diagnostics,
+    #[serde(default)]
+    pub command_receipts: Vec<CommandReceipt>,
 }
 
 impl Snapshot {
@@ -169,15 +188,16 @@ impl Snapshot {
             service_version: env!("CARGO_PKG_VERSION").into(),
             mode,
             generated_at_ms: now_ms(),
-            devices: vec![kraken_target(), motherboard_target()],
+            devices: vec![inventory_target(), motherboard_target()],
             diagnostics: Diagnostics::default(),
+            command_receipts: vec![],
         }
     }
 
     /// User-shareable diagnostics omit USB paths and serial numbers by design.
     pub fn diagnostic_report(&self) -> String {
         let mut report = format!(
-            "LightDriver {}\nMode: {:?}\nSnapshot timestamp: {}\nHardware writes: disabled in this milestone\n\n",
+            "LightDriver {}\nMode: {:?}\nSnapshot timestamp: {}\nHardware control: explicit per-device opt-in; no automatic profile application\n\n",
             self.service_version, self.mode, self.generated_at_ms
         );
         for device in &self.devices {
@@ -197,6 +217,12 @@ impl Snapshot {
                 report.push_str(&format!("  {}: {}\n", c.name, c.support.label()));
             }
             report.push('\n');
+        }
+        for receipt in &self.command_receipts {
+            report.push_str(&format!(
+                "Command {}: {:?} | {}\n",
+                receipt.action, receipt.state, receipt.detail
+            ));
         }
         report.push_str("System sensors\n");
         for s in &self.diagnostics.sensors {
@@ -247,6 +273,12 @@ pub struct PumpCurve {
 }
 
 impl PumpCurve {
+    pub fn full_speed(mut self) -> Self {
+        for point in &mut self.points {
+            point.duty = 100;
+        }
+        self
+    }
     pub fn example(preset: Preset) -> Self {
         let duties = match preset {
             Preset::Quiet => [60, 65, 80, 100],
@@ -298,6 +330,15 @@ pub struct Draft {
     pub curve: PumpCurve,
     pub lighting_rgb: [u8; 3],
     pub lighting_brightness: u8,
+    #[serde(default)]
+    pub lighting_channel: LightingChannel,
+    #[serde(default)]
+    pub lighting_effect: LightingEffect,
+    #[serde(default = "default_effect_speed")]
+    pub lighting_speed: u8,
+}
+fn default_effect_speed() -> u8 {
+    2
 }
 
 impl Default for Draft {
@@ -307,18 +348,28 @@ impl Default for Draft {
             curve: PumpCurve::example(Preset::Balanced),
             lighting_rgb: [83, 221, 202],
             lighting_brightness: 70,
+            lighting_channel: LightingChannel::Both,
+            lighting_effect: LightingEffect::Static,
+            lighting_speed: 2,
         }
     }
 }
 
 impl Draft {
+    pub fn lighting(&self) -> LightingSettings {
+        LightingSettings {
+            channel: self.lighting_channel,
+            effect: self.lighting_effect,
+            rgb: self.lighting_rgb,
+            brightness: self.lighting_brightness,
+            speed: self.lighting_speed,
+        }
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.schema_version != 1 {
             return Err("Unsupported draft version.".into());
         }
-        if self.lighting_brightness > 100 {
-            return Err("Brightness must be 0–100%.".into());
-        }
+        self.lighting().validate()?;
         self.curve.validate()
     }
 }

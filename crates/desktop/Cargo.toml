@@ -9,6 +9,7 @@ publish.workspace = true
 lightdriver-core.workspace = true
 lightdriver-ipc.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 tokio.workspace = true
 iced.workspace = true
 png = "0.18"

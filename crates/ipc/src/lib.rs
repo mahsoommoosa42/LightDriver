@@ -1,9 +1,11 @@
-//! Versioned, bounded local IPC. No TCP listener or device-control commands.
+//! Versioned, bounded local IPC with typed device commands. No TCP listener or raw hardware access.
 use interprocess::local_socket::{
     GenericNamespaced, ListenerOptions, ToNsName,
     tokio::{Listener, Stream, prelude::*},
 };
-use lightdriver_core::{Mode, PROTOCOL_VERSION, Snapshot};
+use lightdriver_core::{
+    CommandReceipt, ControlRequest, LogBatch, LogLevel, Mode, PROTOCOL_VERSION, Snapshot,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::hash_map::DefaultHasher,
@@ -19,13 +21,18 @@ mod windows_security;
 pub const MAX_FRAME: usize = 128 * 1024;
 const IO_TIMEOUT: Duration = Duration::from_secs(3);
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub enum RequestAction {
     #[default]
     Snapshot,
     StopUnprivilegedLiveService,
+    Control(ControlRequest),
+    Logs {
+        after: u64,
+        level: Option<LogLevel>,
+    },
 }
-/// Handoff is denied for demo and elevated processes; there are no hardware setters.
+/// Handoff is denied for demo and elevated processes.
 pub fn permits_cpu_sensor_handoff(mode: Mode, administrator: bool) -> bool {
     mode == Mode::Live && !administrator
 }
@@ -117,7 +124,13 @@ pub async fn write_frame<T: Serialize>(
 pub async fn read_frame<T: serde::de::DeserializeOwned>(
     reader: &mut (impl AsyncReadExt + Unpin),
 ) -> io::Result<T> {
-    tokio::time::timeout(IO_TIMEOUT, async {
+    read_frame_timeout(reader, IO_TIMEOUT).await
+}
+async fn read_frame_timeout<T: serde::de::DeserializeOwned>(
+    reader: &mut (impl AsyncReadExt + Unpin),
+    timeout: Duration,
+) -> io::Result<T> {
+    tokio::time::timeout(timeout, async {
         let len = reader.read_u32().await? as usize;
         if len == 0 || len > MAX_FRAME {
             return Err(io::Error::new(
@@ -167,6 +180,64 @@ pub async fn stop_unprivileged_live_service(mode: Mode) -> io::Result<bool> {
     )
     .await?;
     read_frame(&mut reader).await
+}
+pub async fn control(mode: Mode, request: ControlRequest) -> io::Result<CommandReceipt> {
+    if request.mode != mode {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Command mode mismatch.",
+        ));
+    }
+    request
+        .validate_at(lightdriver_core::now_ms())
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let request_id = request.request_id.clone();
+    let device_id = request.device_id.clone();
+    let stream = connect(mode).await?;
+    let (mut reader, mut writer) = stream.split();
+    write_frame(
+        &mut writer,
+        &Request {
+            protocol_version: PROTOCOL_VERSION,
+            action: RequestAction::Control(request),
+        },
+    )
+    .await?;
+    let receipt: CommandReceipt = read_frame_timeout(&mut reader, Duration::from_secs(8)).await?;
+    if receipt.request_id != request_id || receipt.device_id != device_id {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Command receipt mismatch.",
+        ));
+    }
+    Ok(receipt)
+}
+pub async fn logs(mode: Mode, after: u64, level: Option<LogLevel>) -> io::Result<LogBatch> {
+    let stream = connect(mode).await?;
+    let (mut reader, mut writer) = stream.split();
+    write_frame(
+        &mut writer,
+        &Request {
+            protocol_version: PROTOCOL_VERSION,
+            action: RequestAction::Logs { after, level },
+        },
+    )
+    .await?;
+    let batch: LogBatch = read_frame(&mut reader).await?;
+    if batch.protocol_version != PROTOCOL_VERSION
+        || batch.mode != mode
+        || batch.entries.len() > lightdriver_core::LOG_BATCH_LIMIT
+        || batch
+            .entries
+            .iter()
+            .any(|entry| !entry.visible_at(batch.level))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "Invalid log response.",
+        ));
+    }
+    Ok(batch)
 }
 #[cfg(test)]
 mod tests {
@@ -238,6 +309,17 @@ mod tests {
                         value: 19999.99999999999,
                     })
                     .collect(),
+            })
+            .collect();
+        snapshot.command_receipts = (0..8)
+            .map(|i| CommandReceipt {
+                request_id: format!("{}-{i}", "x".repeat(60)),
+                device_id: "x".repeat(80),
+                action: "Lighting".into(),
+                state: CommandState::Rejected,
+                detail: "x".repeat(512),
+                at_ms: u64::MAX,
+                observed: None,
             })
             .collect();
         let encoded = serde_json::to_vec(&snapshot).unwrap();

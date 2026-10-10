@@ -1,15 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod charts;
+mod controls;
 mod cpu_sensors;
 mod diagnostics;
+mod logs;
 mod performance;
 mod persistence;
 mod style;
 mod ui;
 
 use iced::{Element, Font, Subscription, Task, Theme, window};
-use lightdriver_core::{DeviceStatus, Draft, Mode, Preset, PumpCurve, Snapshot, now_ms};
+use lightdriver_core::{
+    CommandReceipt, ControlAction, DeviceStatus, Draft, LightingChannel, LightingEffect, LogBatch,
+    LogLevel, Mode, Preset, ProfileLibrary, PumpCurve, RigConfiguration, Snapshot, now_ms,
+};
 use std::{
     path::PathBuf,
     time::{Duration, Instant},
@@ -22,14 +27,17 @@ pub enum Tab {
     Capabilities,
     Verification,
     Diagnostics,
+    Setup,
+    Logs,
 }
 impl Tab {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Profile,
         Self::Lighting,
         Self::Capabilities,
         Self::Verification,
         Self::Diagnostics,
+        Self::Setup,
     ];
     fn label(self) -> &'static str {
         match self {
@@ -38,6 +46,8 @@ impl Tab {
             Self::Capabilities => "Capabilities",
             Self::Verification => "Verification",
             Self::Diagnostics => "Diagnostics",
+            Self::Setup => "Setup",
+            Self::Logs => "Logs",
         }
     }
 }
@@ -45,6 +55,14 @@ impl Tab {
 #[derive(Debug, Clone)]
 pub enum Message {
     Tick,
+    LogLevel(LogLevel),
+    Logs(u64, Result<LogBatch, String>),
+    LogPause,
+    LogFollow(bool),
+    LogSummary(bool),
+    LogFilter(String),
+    LogClear,
+    LogExport,
     CoreDetails(bool),
     EnableCpuSensors,
     CpuSensorsEnabled(Result<Snapshot, String>),
@@ -60,6 +78,26 @@ pub enum Message {
     Brightness(u8),
     Color([u8; 3]),
     SaveDraft,
+    Apply(ControlAction),
+    Applied(Result<CommandReceipt, String>),
+    LightingChannel(LightingChannel),
+    LightingEffect(LightingEffect),
+    LightingSpeed(u8),
+    ColorComponent(usize, u8),
+    Temperature(usize, u8),
+    AddPoint,
+    RemovePoint(usize),
+    ProfileName(String),
+    SelectProfile(String),
+    SaveProfile,
+    DeleteProfile,
+    ImportPath(String),
+    ImportProfile,
+    ExportProfile,
+    Header(String),
+    SaveWiring,
+    Evidence(usize, bool),
+    ExportTestReport,
     CopyReport,
     ExportReport,
     Capture,
@@ -68,6 +106,7 @@ pub enum Message {
 
 struct Workbench {
     mode: Mode,
+    logs: logs::LiveLogs,
     snapshot: Snapshot,
     connected: bool,
     selected_device: String,
@@ -77,6 +116,16 @@ struct Workbench {
     enable_cpu_on_connect: bool,
     preset: Option<Preset>,
     draft: Draft,
+    profiles: ProfileLibrary,
+    profile_name: String,
+    selected_profile: Option<String>,
+    import_path: String,
+    rig: RigConfiguration,
+    header: String,
+    command_in_flight: bool,
+    command_count: u64,
+    last_receipt: Option<CommandReceipt>,
+    evidence: [bool; 3],
     data_directory: PathBuf,
     status: String,
     service_error: Option<String>,
@@ -101,31 +150,63 @@ impl Workbench {
         let data_directory = value("--data-dir")
             .map(PathBuf::from)
             .unwrap_or_else(persistence::default_directory);
-        let (draft, status) = match persistence::load(&data_directory) {
+        let (draft, mut status) = match persistence::load(&data_directory) {
             Ok(d) => (
                 d,
-                "Read-only milestone · Device settings are unchanged".into(),
+                "Profiles load as drafts · Apply settings explicitly".into(),
             ),
             Err(e) => (Draft::default(), e),
+        };
+        let profiles = match persistence::load_profiles(&data_directory) {
+            Ok(p) => p,
+            Err(e) => {
+                status = format!("Profiles were not loaded: {e}. Existing file is preserved.");
+                ProfileLibrary::default()
+            }
+        };
+        let rig = match persistence::load_rig(&data_directory) {
+            Ok(p) => p,
+            Err(e) => {
+                status = format!("Wiring was not loaded: {e}. Existing file is preserved.");
+                RigConfiguration::default()
+            }
         };
         let tab = match value("--tab").as_deref() {
             Some("lighting") => Tab::Lighting,
             Some("capabilities") => Tab::Capabilities,
             Some("verification") => Tab::Verification,
             Some("diagnostics") => Tab::Diagnostics,
+            Some("setup") => Tab::Setup,
+            Some("logs") => Tab::Logs,
             _ => Tab::Profile,
         };
         let mut state = Self {
             mode,
+            logs: logs::LiveLogs::new(
+                value("--log-level")
+                    .as_deref()
+                    .and_then(LogLevel::parse)
+                    .unwrap_or_default(),
+            ),
             snapshot: Snapshot::empty(mode),
             connected: false,
-            selected_device: value("--device").unwrap_or_else(|| "kraken-x3".into()),
+            selected_device: value("--device").unwrap_or_else(|| "inventory".into()),
             tab,
             show_cpu_cores: args.iter().any(|a| a == "--cores"),
             cpu_enable_in_flight: false,
             enable_cpu_on_connect: args.iter().any(|a| a == "--enable-cpu-sensors"),
             preset: None,
             draft,
+            profiles,
+            rig,
+            profile_name: String::new(),
+            selected_profile: None,
+            import_path: String::new(),
+            header: String::new(),
+            command_in_flight: false,
+            command_count: 0,
+            last_receipt: None,
+            evidence: [false; 3],
             data_directory,
             status,
             service_error: None,
@@ -137,6 +218,12 @@ impl Workbench {
             adapter: String::new(),
             benchmark: value("--benchmark").map(|p| performance::Benchmark::new(PathBuf::from(p))),
         };
+        let _ = state.log_update(&Message::LogSummary(
+            args.iter().any(|a| a == "--log-summary"),
+        ));
+        if let Some(filter) = value("--log-filter") {
+            let _ = state.log_update(&Message::LogFilter(filter));
+        }
         let task = state.fetch(!args.iter().any(|a| a == "--no-autostart"));
         (
             state,
@@ -145,7 +232,7 @@ impl Workbench {
     }
 
     fn fetch(&mut self, try_start: bool) -> Task<Message> {
-        if self.poll_in_flight || self.cpu_enable_in_flight {
+        if self.poll_in_flight || self.cpu_enable_in_flight || self.command_in_flight {
             return Task::none();
         }
         self.poll_in_flight = true;
@@ -208,11 +295,18 @@ impl Workbench {
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
+        if let Some(task) = self.log_update(&message) {
+            return task;
+        }
+        if let Some(task) = self.control_update(&message) {
+            return task;
+        }
         match message {
             Message::CoreDetails(value) => self.show_cpu_cores = value,
             Message::EnableCpuSensors => {
                 if self.mode != Mode::Live
                     || self.cpu_enable_in_flight
+                    || self.command_in_flight
                     || !self.connected
                     || !self.snapshot.diagnostics.cpu_elevation_needed
                 {
@@ -283,6 +377,7 @@ impl Workbench {
                     return iced::exit();
                 }
                 if !self.cpu_enable_in_flight
+                    && !self.command_in_flight
                     && self.capture_path.is_some()
                     && !self.capture_started
                     && self.booted.elapsed() >= Duration::from_secs(3)
@@ -290,7 +385,12 @@ impl Workbench {
                     self.capture_started = true;
                     return Task::done(Message::Capture);
                 }
-                return self.fetch(false);
+                let logs = if self.tab == Tab::Logs {
+                    self.fetch_logs(None)
+                } else {
+                    Task::none()
+                };
+                return Task::batch([self.fetch(false), logs]);
             }
             Message::Snapshot(result) => {
                 self.poll_in_flight = false;
@@ -302,7 +402,9 @@ impl Workbench {
                             .any(|d| d.id == self.selected_device)
                         {
                             self.selected_device = snapshot.devices[0].id.clone();
+                            self.evidence = [false; 3];
                         }
+                        let was_connected = self.connected;
                         self.snapshot = snapshot;
                         self.connected = true;
                         self.service_error = None;
@@ -312,6 +414,9 @@ impl Workbench {
                         {
                             self.enable_cpu_on_connect = false;
                             return self.update(Message::EnableCpuSensors);
+                        }
+                        if !was_connected {
+                            return self.fetch_logs(Some(self.logs.level));
                         }
                     }
                     Ok(_) => {
@@ -327,13 +432,22 @@ impl Workbench {
             }
             Message::Reconnect => return self.fetch(true),
             Message::Mode(mode) => {
-                if self.poll_in_flight || self.cpu_enable_in_flight || self.mode == mode {
+                if self.poll_in_flight
+                    || self.cpu_enable_in_flight
+                    || self.command_in_flight
+                    || self.mode == mode
+                {
                     return Task::none();
                 }
+                let generation = self.logs.generation.wrapping_add(1);
+                self.logs = logs::LiveLogs::new(LogLevel::Info);
+                self.logs.generation = generation;
+                self.last_receipt = None;
+                self.evidence = [false; 3];
                 self.mode = mode;
                 self.connected = false;
                 self.snapshot = Snapshot::empty(mode);
-                self.selected_device = "kraken-x3".into();
+                self.selected_device = "inventory".into();
                 self.service_error = None;
                 self.status = if mode == Mode::Demo {
                     "Demo mode · Simulated data; hardware is unchanged".into()
@@ -343,12 +457,23 @@ impl Workbench {
                 return self.fetch(true);
             }
             Message::SelectDevice(id) => {
+                if self.command_in_flight {
+                    return Task::none();
+                }
+                if self.selected_device != id {
+                    self.evidence = [false; 3];
+                }
                 self.selected_device = id;
-                if self.tab == Tab::Diagnostics {
+                if matches!(self.tab, Tab::Diagnostics | Tab::Logs) {
                     self.tab = Tab::Profile;
                 }
             }
-            Message::Tab(tab) => self.tab = tab,
+            Message::Tab(tab) => {
+                self.tab = tab;
+                if tab == Tab::Logs {
+                    return self.fetch_logs(None);
+                }
+            }
             Message::Preset(preset) => {
                 self.preset = Some(preset);
                 self.draft.curve = PumpCurve::example(preset);
@@ -389,6 +514,34 @@ impl Workbench {
                     .and_then(window::screenshot)
                     .map(Message::Captured);
             }
+            Message::LogLevel(_)
+            | Message::Logs(_, _)
+            | Message::LogPause
+            | Message::LogFollow(_)
+            | Message::LogSummary(_)
+            | Message::LogFilter(_)
+            | Message::LogClear
+            | Message::LogExport => {}
+            Message::Apply(_)
+            | Message::Applied(_)
+            | Message::LightingChannel(_)
+            | Message::LightingEffect(_)
+            | Message::LightingSpeed(_)
+            | Message::ColorComponent(_, _)
+            | Message::Temperature(_, _)
+            | Message::AddPoint
+            | Message::RemovePoint(_)
+            | Message::ProfileName(_)
+            | Message::SelectProfile(_)
+            | Message::SaveProfile
+            | Message::DeleteProfile
+            | Message::ImportPath(_)
+            | Message::ImportProfile
+            | Message::ExportProfile
+            | Message::Header(_)
+            | Message::SaveWiring
+            | Message::Evidence(_, _)
+            | Message::ExportTestReport => {}
             Message::Captured(screenshot) => {
                 if let Some(path) = &self.capture_path {
                     let _ = std::fs::write(
@@ -510,6 +663,73 @@ fn main() -> iced::Result {
 mod tests {
     use super::*;
     use lightdriver_core::Telemetry;
+
+    #[test]
+    fn controls_use_capabilities_and_explicit_enable_with_independent_full_pump_guard() {
+        let (mut state, _) = Workbench::new();
+        state.poll_in_flight = false;
+        state.mode = Mode::Demo;
+        state.snapshot = Snapshot::empty(Mode::Demo);
+        state.connected = true;
+        assert!(!state.can_submit(&ControlAction::Enable));
+        let mut device = lightdriver_core::kraken_target();
+        device.control.available = true;
+        device.control.pump = true;
+        device.status = DeviceStatus::Detected;
+        state.snapshot.devices[0] = device;
+        state.selected_device = state.snapshot.devices[0].id.clone();
+        assert!(state.can_submit(&ControlAction::Enable));
+        assert!(!state.can_submit(&ControlAction::PumpFull));
+        state.snapshot.devices[0].control.enabled = true;
+        assert!(state.can_submit(&ControlAction::PumpFull));
+        assert!(state.can_submit(&ControlAction::Lighting(state.draft.lighting())));
+        assert!(!state.can_control());
+        state.evidence = [true; 3];
+        let _ = state.update(Message::Apply(ControlAction::PumpFull));
+        assert!(state.command_in_flight);
+        let _ = state.update(Message::Mode(Mode::Live));
+        assert_eq!(state.mode, Mode::Demo);
+        let _ = state.update(Message::SelectDevice("motherboard".into()));
+        assert_ne!(state.selected_device, "motherboard");
+        state.command_in_flight = false;
+        let _ = state.update(Message::SelectDevice("motherboard".into()));
+        assert_eq!(state.evidence, [false; 3]);
+        assert!(!state.can_submit(&ControlAction::Enable));
+        state.connected = false;
+        assert!(!state.can_submit(&ControlAction::Release));
+    }
+
+    #[test]
+    fn case_routes_require_matching_device_identity_and_saved_header() {
+        let (mut state, _) = Workbench::new();
+        state.connected = true;
+        state.poll_in_flight = false;
+        let mut board = lightdriver_core::motherboard_target();
+        board.name = "Example motherboard".into();
+        board.control.available = true;
+        board.control.enabled = true;
+        board.control.lighting_outputs = vec![lightdriver_core::LightingOutput {
+            id: "argb-2".into(),
+            label: "D_LED2".into(),
+        }];
+        state.snapshot.devices = vec![board];
+        state.selected_device = "motherboard".into();
+        assert!(!state.can_submit(&ControlAction::PumpFull));
+        assert!(state.case_action().is_none());
+        state.rig.lighting_routes = vec![lightdriver_core::LightingRoute {
+            name: "Case lighting".into(),
+            device_id: "motherboard".into(),
+            provider: "usb-hid".into(),
+            channel: "D_LED2".into(),
+            board_identity: Some("Example motherboard".into()),
+        }];
+        assert!(state.can_submit(&state.case_action().unwrap()));
+        state.header = "D_LED1".into();
+        assert!(state.case_action().is_none());
+        state.header.clear();
+        state.snapshot.devices[0].name = "Replacement motherboard".into();
+        assert!(state.case_action().is_none());
+    }
 
     fn reading_snapshot(timestamp: u64) -> Snapshot {
         let mut snapshot = Snapshot::empty(Mode::Live);

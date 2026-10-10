@@ -15,6 +15,17 @@ mod nvidia;
 #[cfg(all(windows, target_pointer_width = "64"))]
 mod windows_cpu;
 
+pub fn system_description(mode: Mode) -> String {
+    if mode == Mode::Demo {
+        return "Demo OS · simulated configuration · no hardware queried".into();
+    }
+    format!(
+        "{} · architecture {} · service {}-bit",
+        System::long_os_version().unwrap_or_else(|| std::env::consts::OS.into()),
+        std::env::consts::ARCH,
+        usize::BITS
+    )
+}
 pub struct Collector {
     mode: Mode,
     system: Option<System>,

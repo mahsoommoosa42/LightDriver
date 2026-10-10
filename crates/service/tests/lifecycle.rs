@@ -1,5 +1,7 @@
 //! Exercise real local IPC and ownership without opening hardware.
-use lightdriver_core::{Mode, Snapshot};
+use lightdriver_core::{
+    CommandReceipt, CommandState, ControlAction, ControlRequest, Draft, Mode, Snapshot, now_ms,
+};
 use std::{
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -107,6 +109,153 @@ fn demo_service_owns_endpoint_survives_clients_and_never_falls_back_to_live() {
         output.status.success(),
         "Service must survive earlier client exits"
     );
+    // Logging uses its own bounded response and follows the selected verbosity.
+    let read_logs = |level: &str| -> lightdriver_core::LogBatch {
+        let output = command(&scope)
+            .args(["--demo", "--logs", "--log-level", level])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+    let info = read_logs("info");
+    assert_eq!(info.mode, Mode::Demo);
+    assert!(!info.system_summary.is_empty());
+    assert!(
+        info.system_summary
+            .iter()
+            .any(|line| line.contains("physical cores"))
+    );
+    assert!(info.entries.iter().all(|entry| !entry.raw));
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        let batch = read_logs("verbose");
+        assert!(
+            batch
+                .entries
+                .iter()
+                .all(|entry| entry.visible_at(batch.level))
+        );
+        if batch.entries.iter().any(|entry| entry.raw) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Demo raw stream did not appear in Verbose."
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let info = read_logs("info");
+    assert!(
+        info.entries
+            .iter()
+            .all(|entry| !entry.raw && entry.level <= lightdriver_core::LogLevel::Info)
+    );
+    assert!(serde_json::to_vec(&info).unwrap().len() < lightdriver_ipc::MAX_FRAME);
+    // Real typed commands traverse the named pipe to the serialized demo actor.
+    let path = std::env::temp_dir().join(format!(
+        "lightdriver-command-test-{}.json",
+        std::process::id()
+    ));
+    let submit = |r: &ControlRequest| -> CommandReceipt {
+        std::fs::write(&path, serde_json::to_vec(r).unwrap()).unwrap();
+        let output = command(&scope)
+            .arg("--demo")
+            .arg("--command")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "Command client failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    };
+    let request = |id: &str, action: ControlAction| ControlRequest {
+        request_id: id.into(),
+        device_id: "demo-kraken-x3".into(),
+        mode: Mode::Demo,
+        expires_at_ms: now_ms() + 10_000,
+        action,
+    };
+    assert_eq!(
+        submit(&request("locked", ControlAction::PumpFull)).state,
+        CommandState::Rejected
+    );
+    let enable = request("enable", ControlAction::Enable);
+    assert_eq!(submit(&enable).state, CommandState::Simulated);
+    assert_eq!(submit(&enable).state, CommandState::Simulated);
+    let mut conflict = enable.clone();
+    conflict.action = ControlAction::Release;
+    assert_eq!(submit(&conflict).state, CommandState::Rejected);
+    assert_eq!(
+        submit(&request(
+            "curve",
+            ControlAction::PumpCurve(Draft::default().curve.full_speed())
+        ))
+        .state,
+        CommandState::Simulated
+    );
+    assert_eq!(
+        submit(&request(
+            "lighting",
+            ControlAction::Lighting(Draft::default().lighting())
+        ))
+        .state,
+        CommandState::Simulated
+    );
+    let mut board_request = request("board-enable", ControlAction::Enable);
+    board_request.device_id = "motherboard".into();
+    assert_eq!(submit(&board_request).state, CommandState::Simulated);
+    board_request.request_id = "board-light".into();
+    board_request.action = ControlAction::HeaderLighting {
+        channel_id: "argb-2".into(),
+        settings: Draft::default().lighting(),
+    };
+    assert_eq!(submit(&board_request).state, CommandState::Simulated);
+    board_request.request_id = "board-unknown".into();
+    board_request.action = ControlAction::HeaderLighting {
+        channel_id: "argb-3".into(),
+        settings: Draft::default().lighting(),
+    };
+    assert_eq!(submit(&board_request).state, CommandState::Rejected);
+    let mut wrong_target = request("target", ControlAction::PumpFull);
+    wrong_target.device_id = "motherboard".into();
+    assert_eq!(submit(&wrong_target).state, CommandState::Rejected);
+    let deadline = Instant::now() + Duration::from_secs(4);
+    loop {
+        let output = command(&scope)
+            .args(["--demo", "--snapshot"])
+            .output()
+            .unwrap();
+        let snapshot: Snapshot = serde_json::from_slice(&output.stdout).unwrap();
+        if snapshot.devices[0].telemetry.as_ref().unwrap().pump_duty == 100 {
+            assert!(snapshot.devices[0].control.enabled);
+            assert!(
+                snapshot
+                    .command_receipts
+                    .iter()
+                    .any(|r| r.action == "Pump curve" && r.state == CommandState::Simulated)
+            );
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "Simulated curve did not reach the snapshot."
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(
+        submit(&request("release", ControlAction::Release)).state,
+        CommandState::Simulated
+    );
+    assert_eq!(
+        submit(&request("released", ControlAction::PumpFull)).state,
+        CommandState::Rejected
+    );
+    std::fs::remove_file(path).unwrap();
+
     // The actual demo server rejects the handoff command and remains available.
     let handoff = command(&scope)
         .args(["--demo", "--cpu-sensor-handoff"])

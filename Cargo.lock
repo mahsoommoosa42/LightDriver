@@ -1304,6 +1304,7 @@ dependencies = [
  "lightdriver-core",
  "lightdriver-ipc",
  "png",
+ "serde",
  "serde_json",
  "tokio",
  "windows-sys 0.61.2",
@@ -1315,6 +1316,8 @@ version = "0.1.0"
 dependencies = [
  "hidapi",
  "lightdriver-core",
+ "sysinfo",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
