@@ -22,7 +22,7 @@ The screenshot is the running native application in demo mode. See the [verifica
 | Live logging | Error/Warning/Info/Debug/Verbose, system context, filter/pause/follow and local JSON export; raw packets only in Verbose |
 | Verification | Command receipts and local self-reported hardware test reports; writes remain physically unverified |
 
-Motherboard fan curves remain controlled by BIOS. Research has identified a firmware-variable candidate for saving curves from Windows; complete curve encoding, write permission and reboot behavior remain unverified. See the [BIOS persistence investigation](docs/firmware-fan-persistence.md) and [controller-curve feasibility report](docs/motherboard-curves.md).
+Motherboard fan curves remain controlled by BIOS. Research has identified a firmware-variable candidate for saving curves from Windows; complete curve encoding, write permission and reboot behavior remain unverified. The separate [read-only Rust firmware probe](crates/firmware-probe/README.md) confirmed the reference store's metadata after explicit UAC; it has no firmware setter. See the [BIOS persistence investigation](docs/firmware-fan-persistence.md) and [controller-curve feasibility report](docs/motherboard-curves.md).
 
 X53, X63, and X73 share a USB identity, so discovery identifies the **Kraken X3 family**, rather than claiming to distinguish the radiator model. Both known X3 product IDs are recognized; support beyond the reference X53 needs hardware testing.
 
@@ -89,6 +89,7 @@ Iced desktop ── bounded, versioned local IPC ── Rust service
 | `lightdriver-monitoring` | Read-only CPU topology/load/clocks, optional AMD CPU SDK and AMD/NVIDIA/Intel GPU collectors |
 | `lightdriver-service` | Single owner per user/mode, serialized polling/commands and bounded receipt cache |
 | `lightdriver-desktop` | Native Workbench, explicit Apply, profiles, wiring and evidence export |
+| `lightdriver-firmware-probe` | Separate opt-in research utility; one fixed UEFI metadata read, no firmware writes |
 
 All first-party runtime code is Rust. Windows HID uses `hidapi`'s native Windows backend; the UI tries Iced's WGPU GPU renderer first and uses Tiny Skia as a software fallback. The local API contains snapshots, typed device commands, separate bounded log batches and the explicit CPU-sensor handoff. The service validates mode, device, capability, payload and deadline. It serializes commands with polling, retains duplicate receipts for the full request deadline, and never retries unknown hardware outcomes.
 

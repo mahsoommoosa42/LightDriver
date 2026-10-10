@@ -6,7 +6,7 @@ Investigation updated 10 October 2026. Scope: edit a curve in LightDriver, apply
 
 Moosa chose **further research of true BIOS persistence first**. Startup/resume reapplication has not been selected or implemented.
 
-The follow-up [firmware persistence investigation](firmware-fan-persistence.md) identified a dedicated fan-settings UEFI variable in the official X570 AORUS ELITE WIFI F41c image. Firmware saves it with nonvolatile and runtime-access attributes and reads it during boot. Windows' standard UEFI API is now a concrete candidate; the live variable's write permission and complete custom-curve encoding remain unverified.
+The follow-up [firmware persistence investigation](firmware-fan-persistence.md) identified a dedicated fan-settings UEFI variable in the official X570 AORUS ELITE WIFI F41c image. Firmware saves it with nonvolatile and runtime-access attributes and reads it during boot. A standalone Rust probe has now confirmed Windows read access and the expected live variable size/header/attributes after explicit UAC. Write permission and complete custom-curve encoding remain unverified.
 
 There is also a credible path to autonomous controller-resident curves on recognized chips. The controller-register approach below is a deferred alternative, with different reboot behavior. Neither a saved LightDriver profile nor a successful register write establishes firmware persistence.
 
@@ -99,7 +99,7 @@ Upstream source was inspected for protocol facts; no upstream C/Pawn code was co
 5. Test resume, ordinary restart and full cold power-on separately. Record whether values were retained, reset or reapplied; account for Windows Fast Startup.
 6. Verify rollback and conflicts with vendor software before advertising writable support for that exact board/controller profile.
 
-Physical testing is deferred. Motherboard fan-curve programming remains unimplemented. The next research gates are the live variable's read-only metadata, full firmware curve codec and write policy, as described in the persistence report.
+Physical testing is deferred. Motherboard fan-curve programming remains unimplemented. Read-only live variable metadata is now confirmed. The next research gates are the full firmware curve codec and write policy, as described in the persistence report.
 
 ## Sources
 

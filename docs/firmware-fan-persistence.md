@@ -6,7 +6,7 @@ Research date: 10 October 2026. Moosa selected **research of true BIOS persisten
 
 Offline analysis of GIGABYTE's official X570 AORUS ELITE WIFI F41c image found a dedicated fan-settings UEFI variable. The firmware saves it with nonvolatile, boot-service and runtime-access attributes, and several firmware components read it.
 
-This establishes a concrete candidate for persistent settings through Windows' standard UEFI variable API. It does **not** establish that Windows can write the installed firmware's variable, that the complete custom-curve encoding is understood, or that a curve survives a real reboot. LightDriver's motherboard writes remain disabled.
+The new read-only Rust probe also confirmed access to the live store from Windows after explicit UAC: expected size/header and nonvolatile/runtime attributes. This establishes a concrete candidate for persistent settings through Windows' standard UEFI variable API. It does **not** establish write permission, complete custom-curve encoding or retention of a changed curve through a real reboot. LightDriver's motherboard writes remain disabled.
 
 The candidate does not require PawnIO for the variable transport. PawnIO may still be relevant to a separately validated immediate hardware-apply path. No public GIGABYTE API contract for these private settings was found.
 
@@ -90,7 +90,11 @@ Microsoft documents [GetFirmwareEnvironmentVariableExW](https://learn.microsoft.
 
 The firmware's own save path runs before or within firmware-controlled contexts. It is **not evidence of permission for Windows to perform the same save**. Firmware variable policies, write protection, authentication requirements, boot phase and version changes can restrict access even when runtime reads are permitted. An elevated Windows process cannot override a firmware refusal through this API.
 
-No live UEFI variable read or write has been performed. The installed variable's presence, attributes, header, size and write policy remain unknown.
+A live read through the [standalone Rust probe](../crates/firmware-probe/README.md) succeeded on the reference machine after explicit Windows UAC. It returned 569 bytes, attributes `0x7`, the expected board-image identifier and a matching declared length. The probe restored its original process privilege before exit. The normal-permission run correctly reported a missing token privilege (Win32 1300), rather than claiming the variable was absent.
+
+Only metadata was exported to a private local report; no raw payload, usernames, paths or serials were included, and nothing was uploaded. The compiled probe's firmware imports were audited: only `GetFirmwareType` and `GetFirmwareEnvironmentVariableExW`, with no firmware setter or driver-I/O import.
+
+Live read access and reference-header/attribute matching are now verified for that observation. The complete custom-curve layout, firmware write policy and changed-curve retention remain unverified. A matching header does not identify every firmware version or prove writable support.
 
 ## Meaning of persistence
 
@@ -107,14 +111,14 @@ The intended finished feature saves firmware-owned curves that work before Windo
 
 ## Next validation gates
 
-1. Build a narrowly scoped, read-only Rust probe for this exact variable. Report UEFI boot mode, read status, attributes, length and decoded header; keep any complete capture private. Enable the required process privilege through an explicit administrative action if needed. No setter, variable enumeration, deletion or firmware flashing is needed for this probe.
-2. Compare the live header/layout against the analyzed image and reject mismatched firmware, board identity, size or unexpected attributes. A matching board name alone is insufficient.
+1. **Completed:** build and run the narrowly scoped, read-only Rust probe for this exact variable. UEFI mode, read access, attributes, length, header and process privilege restoration were confirmed after explicit UAC. The tool has no setter, variable enumeration, raw capture or firmware flashing.
+2. **Partially completed:** the live size/header/attributes match the reference format. Complete board/BIOS identity gates and custom-curve layout validation before any writable adapter is considered. A matching board name or header alone is insufficient.
 3. Complete the custom-curve codec and derived-field rules through offline analysis and controlled before/after captures of BIOS-made changes. Preserve every unknown byte. Verify point limits, encoding, selected onboard sensor, interpolation, hysteresis, fan stop and PWM/DC relationships.
 4. Investigate firmware write policy. Read success does not prove write success. If the standard API is denied, report that limit and seek a supported vendor interface; do not bypass firmware protection.
 5. Only after the codec and recovery procedure are established, explicitly approve a change on an identified noncritical fan header. Back up the original store, check it has not changed, submit one supported update and read back the result. A preceding comparison does not make the firmware API atomic; concurrent vendor utilities must be excluded during validation.
 6. Verify BIOS display, real temperature-dependent fan response, GUI and service exit, restart, cold boot and resume separately. Account for Fast Startup and verify that no application silently reapplies the curve. Test restoration of the original settings.
 
-Physical testing is deferred. No curve is writable or advertised as persistent yet.
+Fan-response, write-permission and reboot-persistence tests remain deferred. The metadata read above is the only live firmware operation performed; no curve is writable or advertised as persistent yet.
 
 ## Expandable Rust design, if validation succeeds
 

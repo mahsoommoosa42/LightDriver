@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/ipc", "crates/devices", "crates/service", "crates/desktop", "crates/monitoring"]
+members = ["crates/core", "crates/ipc", "crates/devices", "crates/service", "crates/desktop", "crates/monitoring", "crates/firmware-probe"]
 
 [workspace.package]
 version = "0.1.0"
